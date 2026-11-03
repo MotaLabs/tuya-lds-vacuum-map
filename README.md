@@ -113,7 +113,8 @@ services:
       - ./vacuum-map:/data
 ```
 
-The image is not published yet; until it is, build it from this repository with `docker build -t
+Every release publishes the image with three tags: the version (`0.1.0`), the git tag (`v0.1.0`) and
+`latest`. To run a change that is not released yet, build it from this repository with `docker build -t
 tuya-lds-vacuum-map .`.
 
 ### Several robots

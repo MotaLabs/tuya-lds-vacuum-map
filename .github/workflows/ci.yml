@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  UV_PYTHON: "3.12"
+
+jobs:
+  ruff:
+    name: ruff, lint and format
+    runs-on: [self-hosted, motalabs]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: uv sync --frozen
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+
+  pytest:
+    name: pytest, tests and branch coverage
+    runs-on: [self-hosted, motalabs]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: uv sync --frozen
+      - run: uv run pytest --cov
+
+  image:
+    name: docker build, the image builds
+    runs-on: [self-hosted, motalabs]
+    env:
+      DOCKER_BUILDKIT: "0"
+      TAG: tuya-lds-vacuum-map:pr-${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build --pull --tag "$TAG" .
+      - name: Remove the image from the runner
+        if: always()
+        run: docker image rm --force "$TAG" || true
+
+  conventional-commits:
+    name: Conventional Commits, title and commits
+    runs-on: [self-hosted, motalabs]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check the title and every commit subject
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          pattern='^(feat|fix|perf|docs|chore|ci|test|refactor|style|build)(\([^)]*\))?!?: '
+          bad=0
+          while IFS= read -r subject; do
+            if ! grep -qE "$pattern" <<< "$subject"; then
+              echo "::error::Not a Conventional Commit: $subject"
+              bad=1
+            fi
+          done < <(printf '%s\n' "$TITLE"; git log --no-merges --format=%s "$BASE..$HEAD")
+          if [ "$bad" -ne 0 ]; then
+            echo "::error::The release takes the version from these prefixes, for example 'feat: ...' or 'fix(map): ...'."
+            exit 1
+          fi

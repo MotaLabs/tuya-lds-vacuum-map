@@ -75,7 +75,14 @@ anything else from a real home.
 ## Pull requests
 
 - One change per pull request, with the reason in the description.
-- `uv run pytest --cov`, `uv run ruff check` and `uv run ruff format --check` pass.
+- The pull request title and every commit subject follow
+  [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `perf:`, `docs:`,
+  `test:`, `build:`, `ci:`, `refactor:`, `style:` or `chore:`, with `!` before the colon for a change
+  that breaks compatibility. The release takes the next version from them once the pull request reaches
+  `main`: `!` raises the major, `feat` the minor, `fix` and `perf` the patch, and anything else releases
+  nothing.
+- `uv run pytest --cov`, `uv run ruff check` and `uv run ruff format --check` pass. CI runs them on every
+  pull request, together with the image build and the Conventional Commits check.
 - Code without comments: names and small functions carry the meaning, the why goes in the commit message
   and the pull request.
 - New user-facing text goes in every file under `translations/`; a test checks they all have the same keys.

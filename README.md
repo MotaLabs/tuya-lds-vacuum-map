@@ -20,6 +20,7 @@ the map into cleaning commands sent over the local network.
 | Done | Live path and robot position | From the robot's local path messages, every ~2 s |
 | Done | Room names, as in the app | Read from the robot, so renaming a room in the app shows up here |
 | Done | Per-room suction and water icons | Shown while per-room settings are on |
+| Done | Room colors | Random for each new room, kept across restarts, editable from Home Assistant |
 | Done | Areas and no-go zones | Read from the robot; edit them in the app and the map follows |
 | Done | Tap a room to clean it | Local command, no cloud |
 | Done | Tap an area to clean it | Uses the areas as they are on the robot |
@@ -27,6 +28,7 @@ the map into cleaning commands sent over the local network.
 | Done | Spot cleaning | Tap a point, the 1.5 m square is drawn while the robot works on it |
 | Done | Map source switch | `Automatic` (cloud while it answers, local otherwise) or `Local only`, from Home Assistant |
 | Done | English and Brazilian Portuguese | Entity names and map labels |
+| Done | Several robots in one instance | Each robot gets its own device, map, topics and saved state; so far only one robot has run it |
 | Planned | Draw an area and clean it | Needs the app's zone command captured ([roadmap](#roadmap)) |
 | Planned | Clean one area when the robot has several | Today a tap on an area cleans all of the robot's areas |
 | Planned | Edit room settings, areas and no-go zones from the map | Today they are edited in the app or through Home Assistant helpers |
@@ -64,9 +66,9 @@ The protocol details, with examples, are in [docs/protocol.md](docs/protocol.md)
 
 ## Supported robots
 
-| Robot | Tuya product | Status |
-|---|---|---|
-| KaBuM! Smart 900 (KBSF009, KBSF010, KBSF011, KBSF012) | `Lds Robot`, `7vx4ulan46paequq` | Confirmed |
+| Robot | Tuya product | Profile | Status |
+|---|---|---|---|
+| KaBuM! Smart 900 (KBSF009, KBSF010, KBSF011, KBSF012) | `Lds Robot`, `7vx4ulan46paequq` | `lds-robot` | Confirmed |
 
 Robots from other brands that appear in the Tuya cloud as "Lds Robot", or whose LocalTuya data points
 include `path_comm` (123) and `comm_raw` (127), are likely to work. If you have one, please follow
@@ -114,25 +116,78 @@ services:
 The image is not published yet; until it is, build it from this repository with `docker build -t
 tuya-lds-vacuum-map .`.
 
+### Several robots
+
+One instance serves every robot. Instead of `TUYA_DEVICE_ID`, `DEVICE_NAME` and `ROBOT_PROFILE`, list the
+robots in a TOML file and point `ROBOTS_FILE` at it:
+
+```toml
+[[robots]]
+device_id = "first-device-id"
+name = "Downstairs vacuum"
+
+[[robots]]
+device_id = "second-device-id"
+name = "Upstairs vacuum"
+profile = "upstairs.toml"
+```
+
+`name` and `profile` are optional. A relative profile path is read from the folder of the robots file.
+Setting both `TUYA_DEVICE_ID` and `ROBOTS_FILE` is an error. Each robot gets its own Home Assistant device,
+its own topics under `<prefix>/<device id>/` and its own folder in `DATA_DIR`; the Home Assistant
+connection, the MQTT connection and the cloud project are shared.
+
 ### Settings
 
 | Variable | Required | Default | Meaning |
 |---|---|---|---|
-| `TUYA_DEVICE_ID` | yes | | The robot's Tuya device id, as in LocalTuya |
+| `TUYA_DEVICE_ID` | one robot | | The robot's Tuya device id, as in LocalTuya |
+| `ROBOTS_FILE` | several robots | | Path to the [robots file](#several-robots) |
 | `HA_URL` | yes | | Home Assistant URL |
 | `HA_TOKEN` | yes | | Long-lived access token |
 | `MQTT_HOST` | yes | | MQTT broker host |
 | `MQTT_PORT` | | `1883` | |
 | `MQTT_USERNAME`, `MQTT_PASSWORD` | | | |
 | `TUYA_CLOUD_CLIENT_ID`, `TUYA_CLOUD_CLIENT_SECRET`, `TUYA_CLOUD_REGION` | | | Cloud project; region is `us`, `eu`, `cn`, `in` or `sg`. Leave them out for local-only |
-| `LANGUAGE` | | `en` | `en` or `pt-BR` |
-| `DEVICE_NAME` | | `Vacuum map <id>` | Name of the Home Assistant device the entities belong to |
-| `DATA_DIR` | | `/data` | Where the last map, the rooms and the covered floor are kept between restarts |
-| `STATE_DP`, `PATH_DP`, `RAW_DP`, `ROOM_MODE_DP` | | `105`, `123`, `127`, `144` | Data point numbers, for robots that differ |
+| `LANGUAGE` | | `en` | `en`, `pt-BR` or the path to a translation `.toml`; texts missing from the file stay in English |
+| `DEVICE_NAME` | | `Vacuum map <id>` | With `TUYA_DEVICE_ID`: name of the Home Assistant device the entities belong to |
+| `DATA_DIR` | | `/data` | Where the last map, the rooms and the covered floor are kept between restarts, one folder per robot |
+| `ROBOT_PROFILE` | | `lds-robot` | With `TUYA_DEVICE_ID`: a built-in [robot profile](#robot-profiles) or the path to a `.toml` file |
+| `MAP_SCALE` | | `4` | Image pixels per map cell |
+| `TOPIC_PREFIX` | | `tuya_lds_vacuum_map` | MQTT topics are `<prefix>/<device id>/...`, plus `<prefix>/availability` |
+| `DISCOVERY_PREFIX` | | `homeassistant` | MQTT discovery prefix configured in Home Assistant |
 | `CLOUD_REFRESH_SECONDS` | | `60` | How often the cloud map is fetched while the robot moves |
+| `CLOUD_IDLE_REFRESH_SECONDS` | | `21600` | How often the cloud map is fetched while the robot is still |
+| `CLOUD_AFTER_CLEANING_SECONDS` | | `20` | Wait after a cleaning ends before fetching the final map |
 | `DOUBLE_TAP_SECONDS` | | `0.6` | Window for a double tap; a single tap waits this long before cleaning |
+| `RENDER_INTERVAL_SECONDS` | | `1.5` | Shortest time between two map images |
+| `SAVE_INTERVAL_SECONDS` | | `30` | How often the state in `DATA_DIR` is written |
 | `FONT_PATH` | | DejaVu Sans | TrueType font for the labels |
 | `LOG_LEVEL` | | `INFO` | |
+
+### Robot profiles
+
+What differs between robots lives in a profile, not in the code: the data point numbers, which states mean
+the robot is moving or cleaning a spot, the cell codes of the cloud map, the cleaning width and spot size,
+and the suction and water levels. The built-in `lds-robot` profile is in
+[profiles/lds_robot.toml](src/tuya_lds_vacuum_map/profiles/lds_robot.toml).
+
+A robot that differs in a few values does not need a full copy. A profile can extend another one and
+change only what differs:
+
+```toml
+extends = "lds-robot"
+name = "my-robot"
+
+[data_points]
+raw = 128
+
+[geometry]
+spot_size_mm = 1000
+```
+
+Mount the file in the container and point `ROBOT_PROFILE` at it, for example
+`ROBOT_PROFILE=/data/my-robot.toml`, or name it in the robot's `profile` in the robots file.
 
 ## Home Assistant setup
 
@@ -140,9 +195,11 @@ The service creates, through MQTT discovery:
 
 | Entity | What it is |
 |---|---|
-| `camera.<device>_map` | The map, with `calibration_points`, `robot_state`, `map_source` and `rooms` attributes |
+| `camera.<device>_map` | The map, with `calibration_points`, `robot_state`, `map_source` and `rooms` (id, name, color) attributes |
 | `select.<device>_map_source` | `Automatic` or `Local only` |
 | `select.<device>_room_settings` | The room picked by a double tap, or `None` |
+| `text.<device>_room_color` | The picked room's color as `#rrggbb`; write a new one to change it |
+| `button.<device>_random_room_color` | Gives the picked room a new random color |
 
 A double tap also fires the `tuya_lds_vacuum_map_room_settings` event with `device_id`, `room_id` and
 `room_name`, for automations.
@@ -179,7 +236,8 @@ map_modes:
 ```
 
 To show a room's settings below the map after a double tap, use a `conditional` card on
-`select.<device>_room_settings` for each room.
+`select.<device>_room_settings` for each room. The room color entities act on the same picked room, so they
+fit in the same card.
 
 ## Map source
 

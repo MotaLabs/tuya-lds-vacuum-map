@@ -67,10 +67,26 @@ Commands are written to DP 127 as a `30000` envelope, and the robot echoes the o
 | Clean | `21023` data | Extra command |
 |---|---|---|
 | Rooms | `cleanId: [-3]`, `segmentId: [room ids]` | |
-| Spot | `cleanId: [-3]`, `extraAreas: [{mode: "point", active: "depth", id: 100, vertexs: 1.5 m square}]` | |
+| Spot | `cleanId: [-3]`, `extraAreas: [spot area]` | |
 | Areas | `cleanId: [-2]` | `21003` with the area list in `value`, sent first |
 
 `21005` with `mode: "reAppointClean"` starts the job.
+
+The spot area is a square around the tapped point; its side comes from the robot profile (`spot_size_mm`,
+1.5 m in `lds-robot`):
+
+```json
+{"active": "depth", "id": 100, "mode": "point", "name": "aa", "tag": "room",
+ "vertexs": [[-750, -750], [750, -750], [750, 750], [-750, 750]]}
+```
+
+`mode: "point"` is what marks it as a spot clean. The robot echoes the command on DP 127, which is how the
+map also shows the square for a spot clean started from the app. `active`, `id`, `name` and `tag` are
+copied from what the app sends; their meaning is unknown and the robot accepts them as they are.
+
+These message types and command shapes are this robot family's own JSON protocol, carried by Tuya over
+DP 127. Tuya's standard laser robot protocol is a different one, with numbered binary commands
+([RobotProtocol](https://developer.tuya.com/material/library_oHEKLjj0/component/RobotProtocol.md)).
 
 ## Cloud map
 

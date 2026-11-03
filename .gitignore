@@ -11,3 +11,4 @@ data/
 .tool-versions
 .coverage
 htmlcov/
+.hypothesis/

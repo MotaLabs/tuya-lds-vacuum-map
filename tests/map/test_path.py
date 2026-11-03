@@ -1,11 +1,12 @@
+from hypothesis import given
+from hypothesis import strategies as st
+
+from tuya_lds_vacuum_map.lds.messages import PathChunk
 from tuya_lds_vacuum_map.map.path import PathTracker
 
 
-def chunk(path_id: int, start: int, points: list[list[int]], total: int | None = None) -> dict:
-    data = {"pathID": path_id, "startPos": start, "posArray": points}
-    if total is not None:
-        data["totalPoints"] = total
-    return data
+def chunk(path_id: int, start: int, points: list[list[int]], total: int | None = None) -> PathChunk:
+    return PathChunk(path_id, start, tuple((x, y) for x, y in points), total)
 
 
 def test_first_chunk_starts_the_path():
@@ -42,3 +43,19 @@ def test_total_points_trims_the_path():
     tracker.update(chunk(1, 0, [[0, 0], [10, 0], [20, 0]]))
     tracker.update(chunk(1, 1, [[10, 0]], total=2))
     assert tracker.points == [(0, 0), (10, 0)]
+
+
+coordinates = st.integers(-1_000_000, 1_000_000)
+
+
+@given(st.lists(st.tuples(coordinates, coordinates), min_size=1, max_size=40), st.data())
+def test_any_split_into_chunks_rebuilds_the_path(points, data):
+    cuts = sorted(data.draw(st.sets(st.integers(1, len(points) - 1)))) if len(points) > 1 else []
+    tracker = PathTracker()
+    start = 0
+    for end in [*cuts, len(points)]:
+        tracker.update(chunk(7, start, [list(point) for point in points[start:end]], total=end))
+        start = end
+    assert tracker.points == points
+    tracker.update(chunk(7, 0, [list(point) for point in points[: len(points) // 2]], total=len(points) // 2))
+    assert tracker.points == points[: len(points) // 2]

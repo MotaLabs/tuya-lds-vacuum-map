@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Mapping
 from typing import Any
 
@@ -10,6 +11,8 @@ from .integrations.mqtt import Broker, MqttBridge
 from .integrations.tuya_cloud import TuyaCloud
 from .profiles import Profile
 from .session import RobotSession
+
+log = logging.getLogger(__name__)
 
 
 class App:
@@ -41,7 +44,10 @@ class App:
         device_id, points = data_points(event_type, data)
         session = self.sessions.get(device_id)
         if session and points:
-            await session.on_data_points(points)
+            try:
+                await session.on_data_points(points)
+            except Exception:
+                log.exception("%s: could not handle %s", session.label, event_type)
 
     async def on_mqtt_connect(self) -> None:
         for session in self.sessions.values():
@@ -50,4 +56,7 @@ class App:
     async def on_mqtt_message(self, topic: str, payload: str) -> None:
         session = self.routes.get(topic)
         if session:
-            await session.on_message(topic, payload)
+            try:
+                await session.on_message(topic, payload)
+            except Exception:
+                log.exception("%s: could not handle %s", session.label, topic)

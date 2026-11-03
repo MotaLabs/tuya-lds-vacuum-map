@@ -13,7 +13,7 @@ from .integrations.homeassistant import HomeAssistant, HomeAssistantError
 from .integrations.localtuya import LocalTuyaLink
 from .integrations.mqtt import MqttBridge, Topics, discovery_configs
 from .integrations.tuya_cloud import TuyaCloud
-from .lds.messages import Room
+from .lds.messages import Room, as_object, point_at
 from .map.colors import Color, format_color, parse_color, random_color
 from .map.coverage import Coverage
 from .map.model import MapModel
@@ -91,8 +91,9 @@ class RobotSession:
         update = self.robot.apply(data_points)
         if update.new_path:
             self.map.coverage.paint(update.new_path)
-        if update.rooms_renamed:
+        if update.rooms_changed:
             self.color_new_rooms()
+        if update.rooms_renamed:
             asyncio.get_running_loop().create_task(self.publish_discovery())
         if self.cloud_sync and update.started_moving:
             self.cloud_sync.wake()
@@ -105,7 +106,7 @@ class RobotSession:
     def on_cloud_payload(self, payload: dict[str, Any]) -> None:
         try:
             changed = self.map.set_cloud(payload)
-        except (KeyError, ValueError, TypeError) as error:
+        except ValueError as error:
             log.warning("%s: cloud map could not be decoded: %s", self.label, error)
             return
         if changed:
@@ -122,10 +123,9 @@ class RobotSession:
         topics = self.topics
         try:
             if topic == topics.tap:
-                data = json.loads(payload)
-                await self.taps.tap(
-                    TapMode(data.get("mode", TapMode.ROOM)), round(float(data["x"])), round(float(data["y"]))
-                )
+                data = as_object(json.loads(payload))
+                x, y = point_at(data.get("x"), data.get("y"))
+                await self.taps.tap(TapMode(data.get("mode", TapMode.ROOM)), x, y)
                 self.dirty.set()
             elif topic == topics.map_source_set:
                 self.snapshot.source = MapSource.LOCAL if payload == self.texts.source_local else MapSource.AUTO
@@ -233,21 +233,28 @@ class RobotSession:
         while True:
             await self.dirty.wait()
             self.dirty.clear()
-            scene = self.scene() if self.mqtt.connected else None
-            if scene is not None:
-                image, calibration = await asyncio.to_thread(self.renderer.render, scene)
-                attributes = {
-                    "calibration_points": calibration,
-                    "robot_state": self.robot.state,
-                    "map_source": self.snapshot.source.value,
-                    "rooms": [
-                        {"id": room.id, "name": room.name, "color": format_color(self.room_colors[room.id])}
-                        for room in scene.rooms
-                    ],
-                }
-                if not await self.mqtt.publish_map(self.topics, image, attributes):
-                    self.dirty.set()
+            try:
+                await self.redraw()
+            except Exception:
+                log.exception("%s: the map could not be drawn", self.label)
             await asyncio.sleep(self.settings.timing.render_interval)
+
+    async def redraw(self) -> None:
+        scene = self.scene() if self.mqtt.connected else None
+        if scene is None:
+            return
+        image, calibration = await asyncio.to_thread(self.renderer.render, scene)
+        attributes = {
+            "calibration_points": calibration,
+            "robot_state": self.robot.state,
+            "map_source": self.snapshot.source.value,
+            "rooms": [
+                {"id": room.id, "name": room.name, "color": format_color(self.room_colors[room.id])}
+                for room in scene.rooms
+            ],
+        }
+        if not await self.mqtt.publish_map(self.topics, image, attributes):
+            self.dirty.set()
 
     async def save_loop(self) -> None:
         while True:

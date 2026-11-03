@@ -1,3 +1,6 @@
+from hypothesis import given
+from hypothesis import strategies as st
+
 from support.maps import CODES, PROFILE, build_cells, cell_center_mm, cloud_payload
 from tuya_lds_vacuum_map.lds.messages import Room
 from tuya_lds_vacuum_map.map.coverage import Coverage
@@ -86,3 +89,21 @@ def test_moved_rooms_recolor_the_coverage():
     cov.paint([(25, 25)])
     assert cov.apply(None, (Room(1, "A", pos=(25, 25)),)).value_at(25, 25) == 1
     assert cov.apply(None, (Room(2, "B", pos=(25, 25)),)).value_at(25, 25) == 2
+
+
+def test_a_room_that_is_not_a_cell_code_paints_plain_floor():
+    cov = coverage()
+    cov.paint([(25, 25)])
+    for room_id in (CODES.room_max + 1, CODES.room_min - 1, CODES.floor):
+        assert cov.apply(None, (Room(room_id, "Odd", pos=(25, 25)),)).value_at(25, 25) == CODES.floor
+
+
+millimetres = st.integers(-20_000, 20_000)
+
+
+@given(st.lists(st.tuples(millimetres, millimetres), min_size=1, max_size=8))
+def test_painting_covers_every_point_and_repeats_are_free(points):
+    cov = coverage()
+    cov.paint(points)
+    assert all((x // 50, y // 50) in cov.cells for x, y in points)
+    assert cov.paint(points) is False

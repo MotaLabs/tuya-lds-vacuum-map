@@ -16,6 +16,7 @@ tuya-lds-vacuum-map = "tuya_lds_vacuum_map.__main__:main"
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.170.14",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=7.1.0",

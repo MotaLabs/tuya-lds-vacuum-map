@@ -88,3 +88,16 @@ async def test_stopping_saves_every_robot(harness, tmp_path):
         await harness.app.run()
     assert (tmp_path / DEVICE / "state.json").exists()
     assert (tmp_path / OTHER / "state.json").exists()
+
+
+async def test_an_unexpected_error_in_one_event_is_logged_and_contained(harness, caplog):
+    async def broken(*_) -> None:
+        raise RuntimeError("unexpected")
+
+    harness.session().on_data_points = broken
+    harness.session().on_message = broken
+    await harness.dp(DPS.state, "totaling")
+    await harness.tap(0, 0)
+    assert caplog.text.count("RuntimeError: unexpected") == 2
+    await harness.dp(DPS.state, "totaling", device_id=OTHER)
+    assert harness.session(OTHER).robot.state is None

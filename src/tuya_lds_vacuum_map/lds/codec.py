@@ -5,10 +5,15 @@ from typing import Any
 _DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz"
 
 
-def decode_name(code: str | None) -> str:
+def decode_name(code: Any) -> str:
     if not code:
         return ""
-    return "".join(chr(int(part, 36)) for part in code.split("+"))
+    if not isinstance(code, str):
+        raise ValueError(f"name code is not text: {code!r}")
+    try:
+        return "".join(chr(int(part, 36)) for part in code.split("+"))
+    except OverflowError as error:
+        raise ValueError(f"name code out of range: {code!r}") from error
 
 
 def encode_name(text: str) -> str:
@@ -16,7 +21,10 @@ def encode_name(text: str) -> str:
 
 
 def decode_raw(value: str) -> dict[str, Any]:
-    return json.loads(base64.b64decode(value))
+    message = json.loads(base64.b64decode(value))
+    if not isinstance(message, dict):
+        raise ValueError("raw value is not a JSON object")
+    return message
 
 
 def encode_raw(payload: dict[str, Any]) -> str:

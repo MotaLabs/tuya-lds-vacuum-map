@@ -49,7 +49,7 @@ class Coverage:
         self._nearest.clear()
 
     def apply(self, base: GridMap | None, rooms: tuple[Room, ...]) -> GridMap | None:
-        seeds = [(room.id, room.pos) for room in rooms if room.pos]
+        seeds = [(room.id, room.pos) for room in rooms if room.pos and self.codes.is_room(room.id)]
         if tuple(seeds) != self._seeds_key:
             self._seeds_key = tuple(seeds)
             self._nearest.clear()

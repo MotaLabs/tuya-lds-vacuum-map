@@ -48,13 +48,27 @@ def test_main_builds_the_app_from_the_environment(env):
     assert (session.profile.name, session.texts.map) == ("lds-robot", "Mapa")
 
 
-def test_a_stop_signal_ends_the_app():
+@pytest.mark.parametrize("stop", [signal.SIGTERM, signal.SIGINT])
+def test_a_stop_signal_ends_the_app(stop):
     class Forever:
         async def run(self) -> None:
             await asyncio.Event().wait()
 
+    outcome = []
+
+    def give_up(task: asyncio.Task) -> None:
+        outcome.append("still running")
+        task.cancel()
+
     async def scenario() -> None:
-        asyncio.get_running_loop().call_later(0.01, os.kill, os.getpid(), signal.SIGINT)
+        loop = asyncio.get_running_loop()
+        loop.call_later(0.01, os.kill, os.getpid(), stop)
+        loop.call_later(1, give_up, asyncio.current_task())
         await entry.run(Forever())
 
-    asyncio.run(scenario())
+    previous = signal.signal(stop, lambda *_: outcome.append("default handler"))
+    try:
+        asyncio.run(scenario())
+    finally:
+        signal.signal(stop, previous)
+    assert outcome == []

@@ -1,11 +1,16 @@
 import base64
+import math
 from dataclasses import dataclass
 from typing import Any
 
 import lz4.block
 
+from ..lds.messages import as_int, as_object, as_optional_int, as_point
+
 Point = tuple[int, int]
 Cell = tuple[int, int]
+
+MAX_CELLS = 4_000_000
 
 
 @dataclass
@@ -20,28 +25,29 @@ class GridMap:
     dock: Point | None = None
 
     @classmethod
-    def from_cloud(cls, payload: dict[str, Any]) -> "GridMap":
-        data = payload.get("data", payload)
-        width, height = int(data["width"]), int(data["height"])
-        raw = base64.b64decode(data["map"])
+    def from_cloud(cls, payload: Any) -> "GridMap":
+        data = as_object(payload)
+        data = as_object(data.get("data", data))
         try:
-            cells = bytearray(lz4.block.decompress(raw, uncompressed_size=width * height))
+            width, height = as_int(data.get("width")), as_int(data.get("height"))
+            resolution, x_min, y_min = (_finite(data.get(key)) for key in ("resolution", "x_min", "y_min"))
+            encoded = data.get("map")
+            if not isinstance(encoded, str):
+                raise ValueError("the map cells are missing")
+            map_id, dock = as_optional_int(data.get("mapId")), as_point(data.get("chargeHandlePos"))
+        except ValueError as error:
+            raise ValueError(f"cloud map is malformed: {error}") from error
+        if width <= 0 or height <= 0 or width * height > MAX_CELLS:
+            raise ValueError(f"cloud map of {width}x{height} cells is empty or too large")
+        if resolution <= 0:
+            raise ValueError(f"cloud map resolution {resolution} is not positive")
+        try:
+            cells = bytearray(lz4.block.decompress(base64.b64decode(encoded), uncompressed_size=width * height))
         except lz4.block.LZ4BlockError as error:
             raise ValueError(f"map cells could not be decompressed: {error}") from error
         if len(cells) != width * height:
             raise ValueError(f"map has {len(cells)} cells, expected {width * height}")
-        dock = data.get("chargeHandlePos")
-        map_id = data.get("mapId")
-        return cls(
-            width=width,
-            height=height,
-            resolution=float(data["resolution"]),
-            x_min=float(data["x_min"]),
-            y_min=float(data["y_min"]),
-            cells=cells,
-            map_id=int(map_id) if map_id is not None else None,
-            dock=(int(dock[0]), int(dock[1])) if dock else None,
-        )
+        return cls(width, height, resolution, x_min, y_min, cells, map_id, dock)
 
     @property
     def cell_mm(self) -> float:
@@ -75,3 +81,15 @@ class GridMap:
             self.map_id,
             self.dock,
         )
+
+
+def _finite(value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        raise ValueError(f"not a number: {value!r}")
+    try:
+        number = float(value)
+    except OverflowError as error:
+        raise ValueError(f"not a finite number: {value!r}") from error
+    if not math.isfinite(number):
+        raise ValueError(f"not a finite number: {value!r}")
+    return number

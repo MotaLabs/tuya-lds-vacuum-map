@@ -1,9 +1,13 @@
 import base64
+import contextlib
 
 import lz4.block
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from support.maps import CODES, HEIGHT, RESOLUTION, WIDTH, X_MIN, Y_MIN, build_cells, cell_center_mm, cloud_payload
+from support.strategies import json_values
 from tuya_lds_vacuum_map.map.grid import GridMap
 
 
@@ -68,3 +72,41 @@ def test_corrupt_cells_are_rejected():
     payload["data"]["map"] = base64.b64encode(lz4.block.compress(b"\x01" * 10, store_size=False)[:3]).decode()
     with pytest.raises(ValueError, match="decompressed"):
         GridMap.from_cloud(payload)
+
+
+CLOUD_KEYS = ("width", "height", "resolution", "x_min", "y_min", "map", "mapId", "chargeHandlePos")
+
+
+@given(st.dictionaries(st.sampled_from(CLOUD_KEYS), json_values))
+def test_a_broken_cloud_payload_is_a_value_error(data):
+    with contextlib.suppress(ValueError):
+        GridMap.from_cloud({"data": {**cloud_payload()["data"], **data}})
+
+
+@given(st.integers(1, 60), st.integers(1, 60), st.binary(max_size=4000))
+def test_any_cells_decode_or_fail_with_a_value_error(width, height, raw):
+    data = {**cloud_payload()["data"], "width": width, "height": height}
+    data["map"] = base64.b64encode(raw).decode()
+    with contextlib.suppress(ValueError):
+        assert len(GridMap.from_cloud(data).cells) == width * height
+
+
+def test_an_oversized_map_is_refused_before_decoding():
+    with pytest.raises(ValueError, match="too large"):
+        GridMap.from_cloud({**cloud_payload()["data"], "width": 1_000_000, "height": 1_000_000})
+
+
+@pytest.mark.parametrize(
+    ("change", "reason"),
+    [
+        ({"map": None}, "cells are missing"),
+        ({"resolution": 0}, "not positive"),
+        ({"resolution": "1e999"}, "not a finite number"),
+        ({"x_min": 10**400}, "not a finite number"),
+        ({"y_min": True}, "not a number"),
+        ({"width": 0}, "empty or too large"),
+    ],
+)
+def test_each_broken_field_is_named(change, reason):
+    with pytest.raises(ValueError, match=reason):
+        GridMap.from_cloud({**cloud_payload()["data"], **change})

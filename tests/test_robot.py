@@ -1,6 +1,10 @@
 import dataclasses
 
+from hypothesis import given
+from hypothesis import strategies as st
+
 from support.maps import PROFILE, rooms_message
+from support.strategies import json_values, messages
 from tuya_lds_vacuum_map.lds import commands
 from tuya_lds_vacuum_map.lds.codec import encode_name, encode_raw
 from tuya_lds_vacuum_map.profiles import DataPoints
@@ -43,6 +47,13 @@ def test_room_list_updates_rooms_and_reports_renames():
     renamed = rooms_message()
     renamed["data"]["autoAreaValue"][0]["name"] = encode_name("Office")
     assert robot.apply({DPS.raw: encode_raw(renamed)}).rooms_renamed
+
+
+def test_every_room_list_reports_the_rooms_changed():
+    robot = Robot(PROFILE)
+    assert robot.apply({DPS.raw: encode_raw(rooms_message())}).rooms_changed
+    assert robot.apply({DPS.raw: encode_raw(rooms_message())}).rooms_changed
+    assert not robot.apply({DPS.state: "sweep"}).rooms_changed
 
 
 def test_spot_command_is_kept_until_the_spot_clean_ends():
@@ -90,3 +101,18 @@ def test_saved_state_is_restored():
     assert robot.rooms.map_id == 42
     assert robot.moving
     assert robot.room_mode
+
+
+@given(
+    st.dictionaries(
+        st.sampled_from((DPS.state, DPS.path, DPS.raw, DPS.room_mode, 1)), json_values | messages.map(encode_raw)
+    )
+)
+def test_no_data_point_value_breaks_the_robot(data_points):
+    Robot(PROFILE).apply(data_points)
+
+
+@given(messages)
+def test_no_raw_message_breaks_the_robot(message):
+    robot = Robot(PROFILE)
+    robot.apply({DPS.raw: encode_raw(message), DPS.path: encode_raw(message)})

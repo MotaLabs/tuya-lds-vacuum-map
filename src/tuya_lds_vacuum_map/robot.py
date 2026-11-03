@@ -13,6 +13,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class Update:
     redraw: bool = False
+    rooms_changed: bool = False
     rooms_renamed: bool = False
     started_moving: bool = False
     stopped_moving: bool = False
@@ -77,6 +78,7 @@ class Robot:
         message = codec.decode_raw(value)
         rooms = parse_room_list(message)
         if rooms is not None:
+            update.rooms_changed = True
             update.rooms_renamed |= rooms.names != (self.rooms.names if self.rooms else [])
             self.rooms = rooms
             self.room_message = message

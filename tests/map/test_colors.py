@@ -1,7 +1,10 @@
 import colorsys
+import contextlib
 import random
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from tuya_lds_vacuum_map.map.colors import format_color, parse_color, random_color
 
@@ -48,3 +51,26 @@ def test_repeated_draws_spread_over_a_wide_free_gap():
 
 def test_the_same_seed_gives_the_same_color():
     assert random_color([], random.Random(7)) == random_color([], random.Random(7))
+
+
+channels = st.tuples(st.integers(0, 255), st.integers(0, 255), st.integers(0, 255))
+
+
+@given(channels)
+def test_any_color_round_trips(color):
+    assert parse_color(format_color(color)) == color
+
+
+@given(st.text())
+def test_any_text_is_a_color_or_a_value_error(text):
+    with contextlib.suppress(ValueError):
+        assert format_color(parse_color(text)) == text.strip().lower()
+
+
+@given(st.lists(channels, max_size=16), st.integers())
+def test_any_draw_is_a_valid_mid_tone(used, seed):
+    color = random_color(used, random.Random(seed))
+    assert all(0 <= channel <= 255 for channel in color)
+    _, lightness, saturation = colorsys.rgb_to_hls(*(channel / 255 for channel in color))
+    assert 0.49 <= lightness <= 0.66
+    assert 0.44 <= saturation <= 0.76

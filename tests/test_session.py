@@ -2,12 +2,16 @@ import asyncio
 import colorsys
 import json
 import random
+import tempfile
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from support.fakes import FakeCloudSync
 from support.harness import DEVICE, Harness
 from support.maps import PROFILE, cell_center_mm, cloud_payload, rooms_message
+from support.strategies import json_scalars, json_values, path_chunks, room_lists, spot_commands
 from support.waiting import eventually, stop
 from tuya_lds_vacuum_map.integrations.localtuya import DP_EVENT, STATUS_EVENT
 from tuya_lds_vacuum_map.lds.codec import decode_raw, encode_raw
@@ -161,6 +165,13 @@ async def test_every_room_gets_its_own_color(harness):
     assert harness.session().scene().room_colors == colors
 
 
+async def test_a_room_without_a_name_gets_a_color(harness):
+    message = rooms_message()
+    message["data"]["autoAreaValue"][0]["name"] = ""
+    await harness.dp(DPS.raw, encode_raw(message))
+    assert set(harness.session().room_colors) == {1, 2}
+
+
 async def test_room_color_follows_the_selected_room(harness):
     await select_right(harness)
     session = harness.session()
@@ -242,3 +253,75 @@ async def test_map_attributes_list_room_colors(harness):
 
 def hue(color: tuple[int, int, int]) -> float:
     return colorsys.rgb_to_hls(*(channel / 255 for channel in color))[0]
+
+
+TOPIC_KINDS = ("tap", "map_source_set", "room_settings_set", "room_color_set", "room_color_random")
+taps = st.fixed_dictionaries({"x": json_scalars, "y": json_scalars}, optional={"mode": json_scalars})
+
+
+async def handle(kind: str, payload: str) -> None:
+    with tempfile.TemporaryDirectory() as folder:
+        harness = Harness(folder)
+        session = harness.session()
+        session.on_cloud_payload(cloud_payload())
+        await harness.dp(DPS.raw, encode_raw(rooms_message()))
+        await harness.message(session.topics.room_settings_set, "Right")
+        await harness.message(getattr(session.topics, kind), payload)
+
+
+@given(st.sampled_from(TOPIC_KINDS), st.text() | json_values.map(json.dumps) | taps.map(json.dumps))
+def test_no_mqtt_payload_breaks_the_session(kind, payload):
+    asyncio.run(handle(kind, payload))
+
+
+async def test_a_tap_out_of_range_is_logged(harness, caplog):
+    harness.session().on_cloud_payload(cloud_payload())
+    await harness.tap(10**9, 0, "spot")
+    await harness.message(harness.session().topics.tap, "[1, 2]")
+    assert harness.services == []
+    assert "point out of range" in caplog.text
+    assert "not a number: None" in caplog.text
+
+
+async def test_a_failed_drawing_is_logged_and_the_next_one_still_runs(harness, caplog):
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    render = session.renderer.render
+    calls = []
+
+    def flaky(scene):
+        calls.append(scene)
+        if len(calls) == 1:
+            raise RuntimeError("broken font")
+        return render(scene)
+
+    session.renderer.render = flaky
+    task = asyncio.create_task(session.render_loop())
+    await eventually(lambda: "RuntimeError: broken font" in caplog.text)
+    session.dirty.set()
+    await eventually(lambda: session.topics.map in harness.client.topics())
+    await stop(task)
+
+
+accepted = st.lists(
+    st.tuples(st.just(DPS.raw), room_lists | spot_commands) | st.tuples(st.just(DPS.path), path_chunks),
+    max_size=4,
+)
+
+
+async def draw(updates: list[tuple[int, dict]]) -> list[str]:
+    with tempfile.TemporaryDirectory() as folder:
+        harness = Harness(folder)
+        session = harness.session()
+        session.on_cloud_payload(cloud_payload())
+        await session.on_data_points({DPS.room_mode: True})
+        for dp, message in updates:
+            await session.on_data_points({dp: encode_raw(message)})
+        await session.redraw()
+        return [session.topics.map, *harness.client.topics()]
+
+
+@given(accepted)
+def test_whatever_the_robot_accepts_can_be_drawn(updates):
+    topic, *published = asyncio.run(draw(updates))
+    assert topic in published

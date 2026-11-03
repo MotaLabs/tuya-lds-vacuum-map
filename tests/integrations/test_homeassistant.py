@@ -4,6 +4,7 @@ import json
 import pytest
 from websockets.asyncio.server import serve
 
+from support.waiting import eventually, stop
 from tuya_lds_vacuum_map.integrations.homeassistant import HomeAssistant, HomeAssistantError
 
 
@@ -44,3 +45,21 @@ async def test_subscribes_delivers_events_and_calls_services():
     assert [message["type"] for message in received[1:]] == ["subscribe_events", "call_service", "fire_event"]
     assert received[2]["service_data"] == {"dp": 127}
     assert events == [("localtuya_device_dp_triggered", {"dp": 105})]
+
+
+async def test_a_rejected_token_is_reported(caplog):
+    async def server(ws) -> None:
+        await ws.send(json.dumps({"type": "auth_required"}))
+        await ws.recv()
+        await ws.send(json.dumps({"type": "auth_invalid", "message": "Invalid access token"}))
+
+    async def on_event(event_type: str, data: dict) -> None:
+        raise AssertionError(event_type)
+
+    async with serve(server, "127.0.0.1", 0) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "wrong")
+        task = asyncio.create_task(ha.run([], on_event))
+        await eventually(lambda: "authentication failed: auth_invalid" in caplog.text)
+        assert not ha.connected.is_set()
+        await stop(task)

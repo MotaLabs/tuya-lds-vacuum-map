@@ -1,8 +1,11 @@
+import asyncio
 import json
 import re
+from types import SimpleNamespace
 
 import aiomqtt
 
+from support.waiting import eventually, stop
 from tuya_lds_vacuum_map.integrations.mqtt import Broker, MqttBridge, Topics, discovery_configs
 
 TOPICS = Topics("maps/dev")
@@ -105,3 +108,62 @@ async def test_publish_discovery_uses_the_prefix():
 async def test_a_failed_image_skips_the_attributes():
     client = FakeClient(fail=True)
     assert await bridge(client).publish_map(TOPICS, b"png", {}) is False
+
+
+class FakeConnection:
+    def __init__(self, host: str, options: dict) -> None:
+        self.host = host
+        self.options = options
+        self.subscribed: list[str] = []
+        self.published: list[tuple] = []
+        self.inbox: asyncio.Queue = asyncio.Queue()
+
+    async def __aenter__(self) -> "FakeConnection":
+        return self
+
+    async def __aexit__(self, *_) -> None:
+        return None
+
+    async def subscribe(self, topic: str) -> None:
+        self.subscribed.append(topic)
+
+    async def publish(self, topic: str, payload, retain: bool = False) -> None:
+        self.published.append((topic, payload, retain))
+
+    @property
+    async def messages(self):
+        while True:
+            yield await self.inbox.get()
+
+
+async def test_run_subscribes_announces_and_delivers(monkeypatch):
+    connections: list[FakeConnection] = []
+
+    def connect(host: str, **options) -> FakeConnection:
+        connections.append(FakeConnection(host, options))
+        return connections[-1]
+
+    monkeypatch.setattr(aiomqtt, "Client", connect)
+    target = MqttBridge(Broker("broker", 1884, "user", "secret"), AVAILABILITY, "homeassistant")
+    seen_connected, received = [], []
+
+    async def on_connect() -> None:
+        seen_connected.append(target.connected)
+
+    async def on_message(topic: str, payload: str) -> None:
+        received.append((topic, payload))
+
+    task = asyncio.create_task(target.run(["maps/dev/tap", "maps/dev/room_color/set"], on_connect, on_message))
+    await eventually(lambda: connections and connections[0].published)
+    [connection] = connections
+    will = connection.options["will"]
+    assert (connection.host, connection.options["port"], connection.options["username"]) == ("broker", 1884, "user")
+    assert (will.topic, will.payload, will.retain) == (AVAILABILITY, "offline", True)
+    assert connection.subscribed == ["maps/dev/tap", "maps/dev/room_color/set"]
+    assert seen_connected == [True]
+    assert connection.published == [(AVAILABILITY, "online", True)]
+    connection.inbox.put_nowait(SimpleNamespace(topic=SimpleNamespace(value="maps/dev/tap"), payload=b'{"x": 1}'))
+    await eventually(lambda: received)
+    assert received == [("maps/dev/tap", '{"x": 1}')]
+    await stop(task)
+    assert not target.connected

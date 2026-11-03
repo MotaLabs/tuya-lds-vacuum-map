@@ -83,14 +83,22 @@ def _read(reference: str, seen: frozenset[str]) -> dict[str, Any]:
         path = Path(reference)
         if not path.is_file():
             raise ProfileError(f"robot profile file not found: {reference}")
-        text = path.read_text(encoding="utf-8")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as error:
+            raise ProfileError(f"robot profile file {reference} cannot be read: {error}") from error
     else:
         resource = resources.files(__package__) / f"{reference.replace('-', '_')}.toml"
         if not resource.is_file():
             raise ProfileError(f"unknown robot profile {reference!r}, built-in ones: {', '.join(builtin_profiles())}")
         text = resource.read_text(encoding="utf-8")
-    data = tomllib.loads(text)
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as error:
+        raise ProfileError(f"robot profile {reference!r} is not valid TOML: {error}") from error
     parent = data.pop("extends", None)
+    if parent is not None and not isinstance(parent, str):
+        raise ProfileError(f"robot profile {reference!r} extends {parent!r}, which is not a profile name")
     return _merge(_read(parent, seen | {reference}), data) if parent else data
 
 

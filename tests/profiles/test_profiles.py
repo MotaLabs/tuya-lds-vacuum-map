@@ -67,3 +67,18 @@ def test_an_incomplete_profile_is_an_error(tmp_path):
     broken.write_text('name = "broken"\n[data_points]\nstate = 1\n')
     with pytest.raises(ProfileError, match="broken"):
         load_profile(str(broken))
+
+
+@pytest.mark.parametrize(
+    ("content", "reason"),
+    [
+        (b'name = "broken', "not valid TOML"),
+        (b"extends = 5", "which is not a profile name"),
+        (b"name = '\xff'", "cannot be read"),
+    ],
+)
+def test_an_unreadable_profile_file_is_a_profile_error(tmp_path, content, reason):
+    path = tmp_path / "robot.toml"
+    path.write_bytes(content)
+    with pytest.raises(ProfileError, match=reason):
+        load_profile(str(path))

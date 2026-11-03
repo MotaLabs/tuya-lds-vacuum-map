@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from conftest import PROFILE, cloud_payload, rooms_message
-from harness import DEVICE, Harness
+from support.harness import DEVICE, Harness
+from support.maps import PROFILE, cloud_payload, rooms_message
 from tuya_lds_vacuum_map.config import RobotSettings
 from tuya_lds_vacuum_map.lds.codec import decode_raw, encode_raw
 from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, DataPoints

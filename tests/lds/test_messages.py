@@ -1,4 +1,4 @@
-from conftest import rooms_message
+from support.maps import rooms_message
 from tuya_lds_vacuum_map.lds import commands
 from tuya_lds_vacuum_map.lds.codec import decode_raw
 from tuya_lds_vacuum_map.lds.messages import parse_room_list, path_chunk, spot_in_commands

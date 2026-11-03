@@ -1,4 +1,4 @@
-from conftest import CODES, build_cells, cloud_payload
+from support.maps import CODES, build_cells, cloud_payload
 from tuya_lds_vacuum_map.lds.messages import Room
 from tuya_lds_vacuum_map.map.coverage import Coverage
 from tuya_lds_vacuum_map.map.model import MapModel

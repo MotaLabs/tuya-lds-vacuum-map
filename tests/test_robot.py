@@ -1,6 +1,6 @@
 import dataclasses
 
-from conftest import PROFILE, rooms_message
+from support.maps import PROFILE, rooms_message
 from tuya_lds_vacuum_map.lds import commands
 from tuya_lds_vacuum_map.lds.codec import encode_name, encode_raw
 from tuya_lds_vacuum_map.profiles import DataPoints

@@ -1,4 +1,4 @@
-from conftest import cell_center_mm, rooms_message
+from support.maps import cell_center_mm, rooms_message
 from tuya_lds_vacuum_map.lds.messages import Area, parse_room_list
 from tuya_lds_vacuum_map.map.grid import GridMap
 from tuya_lds_vacuum_map.map.hit import area_at, point_in_polygon, room_at

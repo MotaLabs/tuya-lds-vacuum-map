@@ -3,7 +3,7 @@ import base64
 import lz4.block
 import pytest
 
-from conftest import CODES, HEIGHT, RESOLUTION, WIDTH, X_MIN, Y_MIN, build_cells, cell_center_mm, cloud_payload
+from support.maps import CODES, HEIGHT, RESOLUTION, WIDTH, X_MIN, Y_MIN, build_cells, cell_center_mm, cloud_payload
 from tuya_lds_vacuum_map.map.grid import GridMap
 
 

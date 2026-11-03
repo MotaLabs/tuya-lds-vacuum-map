@@ -5,8 +5,10 @@ import random
 
 import pytest
 
-from conftest import PROFILE, cell_center_mm, cloud_payload, rooms_message
-from harness import DEVICE, FakeCloudSync, Harness
+from support.fakes import FakeCloudSync
+from support.harness import DEVICE, Harness
+from support.maps import PROFILE, cell_center_mm, cloud_payload, rooms_message
+from support.waiting import eventually, stop
 from tuya_lds_vacuum_map.integrations.localtuya import DP_EVENT, STATUS_EVENT
 from tuya_lds_vacuum_map.lds.codec import decode_raw, encode_raw
 from tuya_lds_vacuum_map.map.colors import format_color
@@ -23,8 +25,9 @@ def harness(tmp_path) -> Harness:
 
 async def test_room_list_republishes_the_room_options(harness):
     await harness.dp(DPS.raw, encode_raw(rooms_message()))
-    await asyncio.sleep(0.01)
-    config = json.loads(harness.client.last(f"homeassistant/select/tlvm_{DEVICE}_room_settings/config"))
+    topic = f"homeassistant/select/tlvm_{DEVICE}_room_settings/config"
+    await eventually(lambda: topic in harness.client.topics())
+    config = json.loads(harness.client.last(topic))
     assert config["options"] == ["None", "Left", "Right"]
     assert harness.session().dirty.is_set()
     assert harness.session().unsaved
@@ -108,8 +111,8 @@ async def test_scene_needs_a_map(harness):
 async def test_render_loop_publishes_the_map(harness):
     harness.session().on_cloud_payload(cloud_payload())
     task = asyncio.create_task(harness.session().render_loop())
-    await asyncio.sleep(0.2)
-    task.cancel()
+    await eventually(lambda: harness.session().topics.map_attributes in harness.client.topics())
+    await stop(task)
     assert harness.client.last(harness.session().topics.map).startswith(b"\x89PNG")
     attributes = json.loads(harness.client.last(harness.session().topics.map_attributes))
     assert len(attributes["calibration_points"]) == 3
@@ -228,8 +231,8 @@ async def test_map_attributes_list_room_colors(harness):
     harness.session().on_cloud_payload(cloud_payload())
     await harness.dp(DPS.raw, encode_raw(rooms_message()))
     task = asyncio.create_task(harness.session().render_loop())
-    await asyncio.sleep(0.1)
-    task.cancel()
+    await eventually(lambda: harness.session().topics.map_attributes in harness.client.topics())
+    await stop(task)
     rooms = json.loads(harness.client.last(harness.session().topics.map_attributes))["rooms"]
     assert rooms == [
         {"id": 1, "name": "Left", "color": format_color(harness.session().room_colors[1])},

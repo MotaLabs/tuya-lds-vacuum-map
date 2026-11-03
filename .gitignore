@@ -9,3 +9,5 @@ build/
 data/
 .env
 .tool-versions
+.coverage
+htmlcov/

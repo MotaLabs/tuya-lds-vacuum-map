@@ -1,5 +1,6 @@
 import asyncio
 
+from support.waiting import eventually, stop
 from tuya_lds_vacuum_map.cloud_sync import CloudMapSync
 from tuya_lds_vacuum_map.config import Timing
 from tuya_lds_vacuum_map.integrations.tuya_cloud import TuyaCloudError
@@ -23,15 +24,6 @@ def sync(cloud: FakeCloud, received: list, enabled: bool = True, moving: bool = 
     return CloudMapSync(cloud, "dev", TIMING, lambda: enabled, lambda: moving, received.append)
 
 
-async def run_for(target: CloudMapSync, seconds: float, before_stop=None) -> None:
-    task = asyncio.create_task(target.run())
-    await asyncio.sleep(seconds)
-    if before_stop:
-        before_stop()
-        await asyncio.sleep(seconds)
-    task.cancel()
-
-
 async def test_fetch_hands_the_payload_over():
     received = []
     await sync(FakeCloud(), received).fetch()
@@ -47,32 +39,41 @@ async def test_cloud_errors_are_logged(caplog):
 
 async def test_moving_robot_refreshes_often():
     cloud = FakeCloud()
-    await run_for(sync(cloud, [], moving=True), 0.1)
-    assert cloud.calls >= 3
+    task = asyncio.create_task(sync(cloud, [], moving=True).run())
+    await eventually(lambda: cloud.calls >= 3)
+    await stop(task)
 
 
 async def test_idle_robot_waits_for_a_wake():
     cloud = FakeCloud()
     target = sync(cloud, [])
-    await run_for(target, 0.05, target.wake)
-    assert cloud.calls == 2
+    task = asyncio.create_task(target.run())
+    await eventually(lambda: cloud.calls == 1)
+    await asyncio.sleep(0.05)
+    assert cloud.calls == 1
+    target.wake()
+    await eventually(lambda: cloud.calls == 2)
+    await stop(task)
 
 
 async def test_wake_after_cleaning_waits_for_the_upload():
     cloud = FakeCloud()
     target = sync(cloud, [])
     task = asyncio.create_task(target.run())
-    await asyncio.sleep(0.005)
+    await eventually(lambda: cloud.calls == 1)
     target.wake_after_cleaning()
-    await asyncio.sleep(0.005)
+    await asyncio.sleep(TIMING.cloud_after_cleaning / 4)
     assert cloud.calls == 1
-    await asyncio.sleep(0.05)
-    task.cancel()
-    assert cloud.calls == 2
+    await eventually(lambda: cloud.calls == 2)
+    await stop(task)
 
 
 async def test_local_only_never_calls_the_cloud():
     cloud = FakeCloud()
     target = sync(cloud, [], enabled=False)
-    await run_for(target, 0.02, target.wake)
+    task = asyncio.create_task(target.run())
+    await asyncio.sleep(0.02)
+    target.wake()
+    await asyncio.sleep(0.02)
+    await stop(task)
     assert cloud.calls == 0

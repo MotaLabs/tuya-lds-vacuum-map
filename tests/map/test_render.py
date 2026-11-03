@@ -2,7 +2,7 @@ import io
 
 from PIL import Image
 
-from conftest import CODES, HEIGHT, WIDTH, build_cells, cell_center_mm, cloud_payload
+from support.maps import CODES, HEIGHT, WIDTH, build_cells, cell_center_mm, cloud_payload
 from tuya_lds_vacuum_map.lds import commands
 from tuya_lds_vacuum_map.lds.messages import Area, Room
 from tuya_lds_vacuum_map.map.grid import GridMap

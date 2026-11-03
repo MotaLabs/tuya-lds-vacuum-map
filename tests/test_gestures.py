@@ -2,7 +2,8 @@ import asyncio
 
 import pytest
 
-from conftest import CODES, PROFILE, cell_center_mm, cloud_payload, rooms_message
+from support.maps import CODES, PROFILE, cell_center_mm, cloud_payload, rooms_message
+from support.waiting import eventually
 from tuya_lds_vacuum_map.gestures import DoubleTap, TapController, TapMode
 from tuya_lds_vacuum_map.integrations.homeassistant import HomeAssistantError
 from tuya_lds_vacuum_map.lds.codec import decode_raw
@@ -64,7 +65,7 @@ async def test_one_tap_cleans_the_room_after_the_window(setup):
     await setup.taps.tap(TapMode.ROOM, *LEFT)
     await asyncio.sleep(WINDOW / 5)
     assert setup.sender.sent == []
-    await asyncio.sleep(WINDOW * 3)
+    await eventually(lambda: setup.sender.sent)
     [cmds] = setup.targets()
     assert cmds[0]["data"] == {"cleanId": [-3], "extraAreas": [], "mapId": 42, "segmentId": [1]}
     assert setup.selected == []
@@ -80,7 +81,7 @@ async def test_two_taps_open_the_room_settings(setup):
 
 async def test_tap_on_an_area_cleans_the_areas(setup):
     await setup.taps.tap(TapMode.ROOM, *CATS)
-    await asyncio.sleep(WINDOW * 3)
+    await eventually(lambda: setup.sender.sent)
     [cmds] = setup.targets()
     assert cmds[0]["infoType"] == 21003
     assert cmds[0]["data"]["value"] == rooms_message()["data"]["value"]
@@ -118,5 +119,4 @@ def test_the_room_list_map_id_wins_over_the_cloud():
 async def test_a_failed_command_is_logged(caplog):
     setup = Setup(rooms_message(), cloud_payload(), FakeSender(HomeAssistantError("offline")))
     await setup.taps.tap(TapMode.ROOM, *LEFT)
-    await asyncio.sleep(WINDOW * 3)
-    assert "offline" in caplog.text
+    await eventually(lambda: "offline" in caplog.text)

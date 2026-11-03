@@ -1,0 +1,53 @@
+import asyncio
+from collections.abc import Mapping
+from typing import Any
+
+from .config import Settings
+from .i18n import Texts
+from .integrations.homeassistant import HomeAssistant
+from .integrations.localtuya import EVENT_TYPES, data_points
+from .integrations.mqtt import Broker, MqttBridge
+from .integrations.tuya_cloud import TuyaCloud
+from .profiles import Profile
+from .session import RobotSession
+
+
+class App:
+    def __init__(self, settings: Settings, profiles: Mapping[str, Profile], texts: Texts) -> None:
+        self.settings = settings
+        self.ha = HomeAssistant(settings.ha_url, settings.ha_token)
+        broker = Broker(settings.mqtt_host, settings.mqtt_port, settings.mqtt_username, settings.mqtt_password)
+        self.mqtt = MqttBridge(broker, settings.availability_topic, settings.discovery_prefix)
+        credentials = settings.cloud
+        cloud = TuyaCloud(credentials.client_id, credentials.client_secret, credentials.region) if credentials else None
+        self.sessions = {
+            robot.device_id: RobotSession(robot, profiles[robot.profile], settings, texts, self.ha, self.mqtt, cloud)
+            for robot in settings.robots
+        }
+        self.routes = {topic: session for session in self.sessions.values() for topic in session.topics.inbound}
+
+    async def run(self) -> None:
+        try:
+            async with asyncio.TaskGroup() as group:
+                group.create_task(self.ha.run(list(EVENT_TYPES), self.on_ha_event))
+                group.create_task(self.mqtt.run(list(self.routes), self.on_mqtt_connect, self.on_mqtt_message))
+                for session in self.sessions.values():
+                    group.create_task(session.run())
+        finally:
+            for session in self.sessions.values():
+                session.save()
+
+    async def on_ha_event(self, event_type: str, data: dict[str, Any]) -> None:
+        device_id, points = data_points(event_type, data)
+        session = self.sessions.get(device_id)
+        if session and points:
+            await session.on_data_points(points)
+
+    async def on_mqtt_connect(self) -> None:
+        for session in self.sessions.values():
+            await session.on_connect()
+
+    async def on_mqtt_message(self, topic: str, payload: str) -> None:
+        session = self.routes.get(topic)
+        if session:
+            await session.on_message(topic, payload)

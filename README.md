@@ -274,3 +274,7 @@ run it, how the code is laid out and how to add a robot.
 - [Xiaomi Cloud Map Extractor](https://github.com/PiotrMachowski/Home-Assistant-custom-components-Xiaomi-Cloud-Map-Extractor),
   whose Roidmi parser showed that this map format is shared across brands.
 - [tuya-vacuum-maps](https://github.com/cornguo/tuya-vacuum-maps), which pointed at the cloud map endpoint.
+
+## License
+
+[MIT](LICENSE): use it as you wish. The software is provided as is, without warranty.

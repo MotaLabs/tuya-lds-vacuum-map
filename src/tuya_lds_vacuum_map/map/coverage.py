@@ -1,9 +1,12 @@
+import logging
 import math
 from itertools import pairwise
 
 from ..lds.messages import Room
 from ..profiles import CellCodes
-from .grid import Cell, GridMap, Point
+from .grid import MAX_CELLS, Cell, GridMap, Point
+
+log = logging.getLogger(__name__)
 
 MARGIN_CELLS = 2
 
@@ -16,6 +19,7 @@ class Coverage:
         self.cells: set[Cell] = set(cells or ())
         self._nearest: dict[Cell, int] = {}
         self._seeds_key: tuple | None = None
+        self._too_large: tuple[int, int] | None = None
         reach = math.ceil(cleaning_radius_mm / cell_mm)
         limit = cleaning_radius_mm * cleaning_radius_mm
         self._footprint = [
@@ -70,12 +74,17 @@ class Coverage:
             grid.set(target, self._nearest_room(cell, seeds))
         return grid
 
-    def _alone(self, seeds: list[tuple[int, Point]]) -> GridMap:
+    def _alone(self, seeds: list[tuple[int, Point]]) -> GridMap | None:
         cols = [col for col, _ in self.cells]
         rows = [row for _, row in self.cells]
         col0, row0 = min(cols) - MARGIN_CELLS, min(rows) - MARGIN_CELLS
         width = max(cols) - col0 + 1 + MARGIN_CELLS
         height = max(rows) - row0 + 1 + MARGIN_CELLS
+        if width * height > MAX_CELLS:
+            if self._too_large != (width, height):
+                log.warning("the covered floor spans %sx%s cells, too large to draw", width, height)
+                self._too_large = (width, height)
+            return None
         grid = GridMap(
             width,
             height,

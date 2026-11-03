@@ -5,6 +5,7 @@ from PIL import Image
 from support.maps import CODES, HEIGHT, WIDTH, build_cells, cell_center_mm, cloud_payload
 from tuya_lds_vacuum_map.lds import commands
 from tuya_lds_vacuum_map.lds.messages import Area, Room
+from tuya_lds_vacuum_map.map import render as render_module
 from tuya_lds_vacuum_map.map.grid import GridMap
 from tuya_lds_vacuum_map.map.render import Renderer, Scene, Style, calibration
 
@@ -112,3 +113,20 @@ def test_room_names_are_drawn(payload):
     named = render(Scene(grid, rooms=(Room(1, "Left", pos=cell_center_mm(10, 14)),)))
     unnamed = render(Scene(grid, rooms=(Room(1, "", pos=cell_center_mm(10, 14)),)))
     assert named.tobytes() != unnamed.tobytes()
+
+
+def test_a_map_too_large_for_the_scale_is_drawn_smaller(monkeypatch, payload):
+    monkeypatch.setattr(render_module, "MAX_IMAGE_PIXELS", WIDTH * HEIGHT * 4)
+    grid = GridMap.from_cloud(payload)
+    image, points = Renderer(CODES, STYLE).render(Scene(grid, rooms=UNNAMED, room_colors=COLORS))
+    drawn = Image.open(io.BytesIO(image)).convert("RGB")
+    assert drawn.size == (WIDTH * 2, HEIGHT * 2)
+    assert points == calibration(grid, 2)
+    assert drawn.getpixel(to_map(points, *cell_center_mm(10, 14))) == COLORS[1]
+
+
+def test_a_map_with_more_cells_than_pixels_is_drawn_one_pixel_per_cell(monkeypatch, payload):
+    monkeypatch.setattr(render_module, "MAX_IMAGE_PIXELS", WIDTH * HEIGHT // 2)
+    image, points = Renderer(CODES, STYLE).render(Scene(GridMap.from_cloud(payload)))
+    assert Image.open(io.BytesIO(image)).size == (WIDTH, HEIGHT)
+    assert points == calibration(GridMap.from_cloud(payload), 1)

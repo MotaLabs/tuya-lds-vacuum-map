@@ -1,3 +1,4 @@
+import dataclasses
 import io
 import math
 import os
@@ -17,6 +18,8 @@ FONT_CANDIDATES = (
 )
 
 Color = tuple[int, ...]
+
+MAX_IMAGE_PIXELS = 4_000_000
 
 
 @dataclass(frozen=True)
@@ -77,7 +80,9 @@ class Renderer:
         self.style = style or Style()
 
     def render(self, scene: Scene) -> tuple[bytes, list[dict]]:
-        grid, scale = scene.grid, self.style.scale
+        grid = scene.grid
+        scale = min(self.style.scale, max(1, math.isqrt(MAX_IMAGE_PIXELS // (grid.width * grid.height))))
+        style = dataclasses.replace(self.style, scale=scale)
         base = Image.frombytes("P", (grid.width, grid.height), bytes(grid.cells))
         base.putpalette(self._palette(scene.room_colors))
         base.info["transparency"] = self.codes.unknown
@@ -87,8 +92,8 @@ class Renderer:
             .resize((grid.width * scale, grid.height * scale), Image.Resampling.NEAREST)
         )
         layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
-        _Painter(ImageDraw.Draw(layer), grid, self.style).paint(scene)
-        canvas = Image.new("RGBA", base.size, self.style.background)
+        _Painter(ImageDraw.Draw(layer), grid, style).paint(scene)
+        canvas = Image.new("RGBA", base.size, style.background)
         canvas.alpha_composite(base)
         canvas.alpha_composite(layer)
         out = io.BytesIO()

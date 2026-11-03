@@ -3,6 +3,7 @@ from hypothesis import strategies as st
 
 from support.maps import CODES, PROFILE, build_cells, cell_center_mm, cloud_payload
 from tuya_lds_vacuum_map.lds.messages import Room
+from tuya_lds_vacuum_map.map import coverage as coverage_module
 from tuya_lds_vacuum_map.map.coverage import Coverage
 from tuya_lds_vacuum_map.map.grid import GridMap
 
@@ -96,6 +97,17 @@ def test_a_room_that_is_not_a_cell_code_paints_plain_floor():
     cov.paint([(25, 25)])
     for room_id in (CODES.room_max + 1, CODES.room_min - 1, CODES.floor):
         assert cov.apply(None, (Room(room_id, "Odd", pos=(25, 25)),)).value_at(25, 25) == CODES.floor
+
+
+def test_a_covered_floor_too_large_to_draw_is_left_out_and_reported_once(monkeypatch, caplog):
+    monkeypatch.setattr(coverage_module, "MAX_CELLS", 400)
+    cov = coverage()
+    cov.paint([(0, 0)])
+    assert cov.apply(None, ()) is not None
+    cov.paint([(5_000, 0)])
+    assert cov.apply(None, ()) is None
+    assert cov.apply(None, ()) is None
+    assert caplog.text.count("too large to draw") == 1
 
 
 millimetres = st.integers(-20_000, 20_000)

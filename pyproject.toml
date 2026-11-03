@@ -3,6 +3,7 @@ name = "tuya-lds-vacuum-map"
 version = "0.1.0"
 description = "Map bridge for Tuya LDS (laser) robot vacuums in Home Assistant"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "aiomqtt>=2.3",

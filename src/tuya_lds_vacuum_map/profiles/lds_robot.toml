@@ -1,0 +1,36 @@
+name = "lds-robot"
+description = "Tuya 'Lds Robot' laser vacuums, such as the KaBuM! Smart 900 (KBSF009 to KBSF012)"
+
+[data_points]
+state = 105
+path = 123
+raw = 127
+room_mode = 144
+
+[states]
+moving = ["pointing", "areaing", "totaling", "sweep", "mop", "curpointing", "selectroom", "remotectl", "tocharge"]
+spot = ["pointing", "curpointing"]
+
+[cells]
+wall = 0
+unknown = 127
+room_min = 1
+room_max = 126
+floor = 254
+
+[geometry]
+cleaning_radius_mm = 150
+spot_size_mm = 1500
+coverage_cell_mm = 50
+
+[levels.fan]
+quiet = "quiet"
+auto = "standard"
+strong = "strong"
+max = "max"
+mop = "mop"
+
+[levels.water]
+1 = "low"
+2 = "medium"
+3 = "high"

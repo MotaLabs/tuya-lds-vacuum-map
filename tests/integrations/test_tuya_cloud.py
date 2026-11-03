@@ -86,3 +86,22 @@ async def test_a_map_without_layout_is_an_error(http):
     http.answers[BASE + FILES_PATH] = [{"success": True, "result": FILES[:1]}]
     with pytest.raises(TuyaCloudError, match="no layout"):
         await TuyaCloud("id", "secret", "us").realtime_map("dev")
+
+
+@pytest.mark.parametrize(
+    ("path", "answer", "reason"),
+    [
+        (TOKEN_PATH, {"success": True, "result": []}, "no access token"),
+        (TOKEN_PATH, {"success": True, "result": {"access_token": 7}}, "no access token"),
+        (TOKEN_PATH, [], "None: None"),
+        (FILES_PATH, {"success": True}, "no layout"),
+        (FILES_PATH, {"success": True, "result": {"map_type": 0}}, "no layout"),
+        (FILES_PATH, {"success": True, "result": ["file", {"map_type": 0}]}, "no https address"),
+        (FILES_PATH, {"success": True, "result": [{"map_type": 0, "map_url": "file:///etc/passwd"}]}, "no https"),
+    ],
+)
+async def test_an_answer_of_the_wrong_shape_is_a_cloud_error(http, path, answer, reason):
+    http.answers[BASE + path] = [answer]
+    with pytest.raises(TuyaCloudError, match=reason):
+        await TuyaCloud("id", "secret", "us").realtime_map("dev")
+    assert "file:///etc/passwd" not in http.urls()

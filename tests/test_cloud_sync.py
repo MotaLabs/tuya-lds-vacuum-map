@@ -1,4 +1,5 @@
 import asyncio
+import http.client
 
 from support.waiting import eventually, stop
 from tuya_lds_vacuum_map.cloud_sync import CloudMapSync
@@ -35,6 +36,26 @@ async def test_cloud_errors_are_logged(caplog):
     await sync(FakeCloud(TuyaCloudError(1106, "permission deny")), received).fetch()
     assert received == []
     assert "permission deny" in caplog.text
+
+
+async def test_a_cut_download_is_logged(caplog):
+    received = []
+    await sync(FakeCloud(http.client.IncompleteRead(b"{")), received).fetch()
+    assert received == []
+    assert "cloud map for dev unavailable: IncompleteRead" in caplog.text
+
+
+async def test_an_unexpected_error_is_logged_and_the_next_fetch_still_runs(caplog):
+    cloud = FakeCloud()
+
+    def broken(payload: dict) -> None:
+        raise RuntimeError("bad payload")
+
+    target = CloudMapSync(cloud, "dev", TIMING, lambda: True, lambda: True, broken)
+    task = asyncio.create_task(target.run())
+    await eventually(lambda: cloud.calls >= 2)
+    await stop(task)
+    assert "RuntimeError: bad payload" in caplog.text
 
 
 async def test_moving_robot_refreshes_often():

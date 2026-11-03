@@ -167,3 +167,29 @@ async def test_run_subscribes_announces_and_delivers(monkeypatch):
     assert received == [("maps/dev/tap", '{"x": 1}')]
     await stop(task)
     assert not target.connected
+
+
+async def test_a_message_that_is_not_utf8_is_skipped(monkeypatch, caplog):
+    connections: list[FakeConnection] = []
+
+    def connect(host: str, **options) -> FakeConnection:
+        connections.append(FakeConnection(host, options))
+        return connections[-1]
+
+    async def nothing() -> None:
+        pass
+
+    async def on_message(topic: str, payload: str) -> None:
+        received.append(payload)
+
+    monkeypatch.setattr(aiomqtt, "Client", connect)
+    received: list[str] = []
+    target = MqttBridge(Broker("broker"), AVAILABILITY, "homeassistant")
+    task = asyncio.create_task(target.run(["maps/dev/tap"], nothing, on_message))
+    await eventually(lambda: connections and connections[0].published)
+    for payload in (b"\xff\xfe", b"after"):
+        connections[0].inbox.put_nowait(SimpleNamespace(topic=SimpleNamespace(value="maps/dev/tap"), payload=payload))
+    await eventually(lambda: received)
+    await stop(task)
+    assert received == ["after"]
+    assert "maps/dev/tap that is not UTF-8" in caplog.text

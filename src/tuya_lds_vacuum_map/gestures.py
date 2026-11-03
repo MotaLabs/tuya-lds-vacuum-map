@@ -89,8 +89,8 @@ class TapController:
         await asyncio.sleep(self.double_tap.window)
         try:
             await self.sender.send_raw(command)
-        except HomeAssistantError as error:
-            log.warning("cleaning command failed: %s", error)
+        except (HomeAssistantError, TimeoutError) as error:
+            log.warning("cleaning command failed: %s", str(error) or type(error).__name__)
 
     def _cancel_pending(self) -> None:
         if self._pending and not self._pending.done():

@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import http.client
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -37,7 +38,10 @@ class CloudMapSync:
     async def run(self) -> None:
         while True:
             if self.enabled():
-                await self.fetch()
+                try:
+                    await self.fetch()
+                except Exception:
+                    log.exception("cloud map for %s could not be handled", self.device_id)
             timeout = self.timing.cloud_refresh_moving if self.moving() else self.timing.cloud_refresh_idle
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._wake.wait(), timeout)
@@ -46,7 +50,7 @@ class CloudMapSync:
     async def fetch(self) -> None:
         try:
             payload = await self.cloud.realtime_map(self.device_id)
-        except (TuyaCloudError, OSError, ValueError) as error:
+        except (TuyaCloudError, OSError, ValueError, http.client.HTTPException) as error:
             log.warning("cloud map for %s unavailable: %s", self.device_id, error)
             return
         self.on_payload(payload)

@@ -158,11 +158,15 @@ class MqttBridge:
                     backoff = 1
                     log.info("connected to MQTT")
                     async for message in client.messages:
-                        payload = (
-                            message.payload.decode()
-                            if isinstance(message.payload, bytes | bytearray)
-                            else str(message.payload)
-                        )
+                        try:
+                            payload = (
+                                message.payload.decode()
+                                if isinstance(message.payload, bytes | bytearray)
+                                else str(message.payload)
+                            )
+                        except UnicodeDecodeError:
+                            log.warning("ignoring a message on %s that is not UTF-8", message.topic.value)
+                            continue
                         await on_message(message.topic.value, payload)
             except aiomqtt.MqttError as error:
                 log.warning("MQTT connection lost: %s", error)

@@ -6,6 +6,8 @@ import time
 import urllib.request
 import uuid
 
+from ..lds.messages import as_object, as_objects, as_optional_int, as_text
+
 ENDPOINTS = {
     "us": "https://openapi.tuyaus.com",
     "eu": "https://openapi.tuyaeu.com",
@@ -35,20 +37,26 @@ class TuyaCloud:
         return await asyncio.to_thread(self._realtime_map, device_id)
 
     def _realtime_map(self, device_id: str) -> dict:
-        files = self._get(f"/v1.0/users/sweepers/file/{device_id}/realtime-map", self._access_token())
+        files = as_objects(self._get(f"/v1.0/users/sweepers/file/{device_id}/realtime-map", self._access_token()))
         layout = next((item for item in files if item.get("map_type") == LAYOUT_MAP), None)
         if layout is None:
             raise TuyaCloudError("no-layout", "the realtime map has no layout file")
-        with urllib.request.urlopen(layout["map_url"], timeout=self.timeout) as response:
+        url = as_text(layout.get("map_url"))
+        if not url or not url.startswith("https://"):
+            raise TuyaCloudError("no-layout", f"the layout file has no https address: {url!r}")
+        with urllib.request.urlopen(url, timeout=self.timeout) as response:
             return json.loads(response.read())
 
     def _access_token(self) -> str:
         if self._token and time.time() < self._token_expires:
             return self._token
-        result = self._get("/v1.0/token?grant_type=1")
-        self._token = result["access_token"]
-        self._token_expires = time.time() + int(result.get("expire_time", 3600)) - 60
-        return self._token
+        result = as_object(self._get("/v1.0/token?grant_type=1"))
+        token = as_text(result.get("access_token"))
+        if not token:
+            raise TuyaCloudError("no-token", "the token answer has no access token")
+        self._token = token
+        self._token_expires = time.time() + (as_optional_int(result.get("expire_time")) or 3600) - 60
+        return token
 
     def _get(self, path: str, token: str = ""):
         now = str(int(time.time() * 1000))
@@ -62,9 +70,9 @@ class TuyaCloud:
         with urllib.request.urlopen(
             urllib.request.Request(self.base + path, headers=headers), timeout=self.timeout
         ) as response:
-            body = json.loads(response.read())
+            body = as_object(json.loads(response.read()))
         if not body.get("success"):
             if token and body.get("code") in (1010, 1011):
                 self._token = None
             raise TuyaCloudError(body.get("code"), body.get("msg"))
-        return body["result"]
+        return body.get("result")

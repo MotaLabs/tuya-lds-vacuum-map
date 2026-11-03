@@ -119,4 +119,10 @@ def test_the_room_list_map_id_wins_over_the_cloud():
 async def test_a_failed_command_is_logged(caplog):
     setup = Setup(rooms_message(), cloud_payload(), FakeSender(HomeAssistantError("offline")))
     await setup.taps.tap(TapMode.ROOM, *LEFT)
-    await eventually(lambda: "offline" in caplog.text)
+    await eventually(lambda: "cleaning command failed: offline" in caplog.text)
+
+
+async def test_a_command_that_times_out_is_logged(caplog):
+    setup = Setup(rooms_message(), cloud_payload(), FakeSender(TimeoutError()))
+    await setup.taps.tap(TapMode.ROOM, *LEFT)
+    await eventually(lambda: "cleaning command failed: TimeoutError" in caplog.text)

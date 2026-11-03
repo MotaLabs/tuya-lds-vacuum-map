@@ -1,0 +1,48 @@
+name: Robot support
+description: Report a robot model, working or not.
+labels: ["robot-support"]
+body:
+  - type: markdown
+    attributes:
+      value: Leave out device ids, local keys, tokens and anything that shows your home.
+  - type: input
+    id: model
+    attributes:
+      label: Brand and model
+      placeholder: KaBuM! Smart 900 (KBSF009)
+    validations:
+      required: true
+  - type: input
+    id: tuya-product
+    attributes:
+      label: Tuya product name and product id
+      placeholder: Lds Robot, 7vx4ulan46paequq
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware version
+  - type: textarea
+    id: data-points
+    attributes:
+      label: Data points
+      description: The numbers of the state, path and raw data points, and anything else that looks map related.
+    validations:
+      required: true
+  - type: checkboxes
+    id: works
+    attributes:
+      label: What works
+      options:
+        - label: Cloud map
+        - label: Live path and position
+        - label: Room names
+        - label: Tap to clean a room
+        - label: Tap to clean an area
+        - label: Spot cleaning
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: What differs from docs/protocol.md, logs, anything else.

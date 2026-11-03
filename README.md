@@ -95,7 +95,7 @@ The service is a container. With Docker Compose:
 ```yaml
 services:
   vacuum-map:
-    image: ghcr.io/maikemota/tuya-lds-vacuum-map:0.1.0
+    image: ghcr.io/motalabs/tuya-lds-vacuum-map:0.1.0
     restart: unless-stopped
     environment:
       TUYA_DEVICE_ID: your-device-id
@@ -251,8 +251,8 @@ from the saved map and the live path, so nothing breaks; the walls simply stop u
 
 ## Roadmap
 
-Planned work is tracked as [issues](https://github.com/MaikeMota/tuya-lds-vacuum-map/issues) grouped in
-[milestones](https://github.com/MaikeMota/tuya-lds-vacuum-map/milestones). In short:
+Planned work is tracked as [issues](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues) grouped in
+[milestones](https://github.com/MotaLabs/tuya-lds-vacuum-map/milestones). In short:
 
 - **0.2, ship it**: container image published by CI, Home Assistant add-on packaging, a dashboard example.
 - **0.3, more cleaning**: draw an area and clean it, clean one area among several, show the robot heading.

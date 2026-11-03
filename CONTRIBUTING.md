@@ -71,6 +71,8 @@ anything else from a real home.
   any input is either read or refused with a `ValueError`. Shared strategies live in
   [tests/support/strategies.py](tests/support/strategies.py).
 - `uv run pytest --cov` measures branch coverage and fails under 95%.
+- Every run writes `reports/junit.xml`, and a run with `--cov` also writes `reports/coverage.xml`. CI
+  publishes both as the `test-reports` artifact of the pull request.
 
 ## Pull requests
 

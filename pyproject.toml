@@ -29,7 +29,15 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
-addopts = ["--import-mode=importlib", "--strict-markers", "--strict-config", "-ra"]
+addopts = [
+    "--import-mode=importlib",
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+    "--junitxml=reports/junit.xml",
+    "--cov-report=term-missing:skip-covered",
+    "--cov-report=xml",
+]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 filterwarnings = ["error"]
@@ -45,6 +53,9 @@ source = ["tuya_lds_vacuum_map"]
 fail_under = 95
 show_missing = true
 skip_covered = true
+
+[tool.coverage.xml]
+output = "reports/coverage.xml"
 
 [tool.ruff]
 line-length = 120

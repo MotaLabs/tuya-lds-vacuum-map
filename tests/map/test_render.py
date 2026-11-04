@@ -89,6 +89,28 @@ def test_spot_is_tinted(payload):
     assert outside == COLORS[2]
 
 
+def test_the_path_shows_over_the_spot(payload):
+    grid = GridMap.from_cloud(payload)
+    spot = tuple(tuple(vertex) for vertex in commands.spot_square(*cell_center_mm(10, 14), 500))
+    path = [cell_center_mm(8, 14), cell_center_mm(12, 14)]
+    image = render(Scene(grid, rooms=UNNAMED, room_colors=COLORS, path=path, spot=spot))
+    assert min(image.getpixel(pixel_of_cell(10, 14))) > 200
+
+
+def test_an_area_under_the_spot_keeps_its_border(payload):
+    grid = GridMap.from_cloud(payload)
+    area = Area(1, "area", "normal", "", ((-750, 50), (-250, 50), (-250, 550), (-750, 550)))
+    spot = tuple(tuple(vertex) for vertex in commands.spot_square(*cell_center_mm(10, 14), 500))
+    plain = render(Scene(grid, rooms=UNNAMED, room_colors=COLORS, areas=(area,)))
+    with_spot = render(Scene(grid, rooms=UNNAMED, room_colors=COLORS, areas=(area,), spot=spot))
+    border = [
+        (x, y) for x in range(WIDTH * SCALE) for y in range(HEIGHT * SCALE) if plain.getpixel((x, y)) == (40, 40, 40)
+    ]
+    inside = [(x, y) for x, y in border if 5 * SCALE + 4 < x < 15 * SCALE - 4]
+    assert inside
+    assert all(sum(with_spot.getpixel(p)) < 200 for p in inside)
+
+
 def test_forbidden_area_is_red(payload):
     grid = GridMap.from_cloud(payload)
     x, y = cell_center_mm(30, 20)

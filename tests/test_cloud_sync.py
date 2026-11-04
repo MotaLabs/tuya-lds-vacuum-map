@@ -1,6 +1,8 @@
 import asyncio
 import http.client
 
+import pytest
+
 from support.waiting import eventually, stop
 from tuya_lds_vacuum_map.cloud_sync import CloudMapSync
 from tuya_lds_vacuum_map.config import Timing
@@ -43,6 +45,14 @@ async def test_a_cut_download_is_logged(caplog):
     await sync(FakeCloud(http.client.IncompleteRead(b"{")), received).fetch()
     assert received == []
     assert "cloud map for dev unavailable: IncompleteRead" in caplog.text
+
+
+@pytest.mark.parametrize("error", [TimeoutError("timed out"), ConnectionResetError("reset by peer")])
+async def test_a_cloud_that_does_not_answer_is_logged(caplog, error):
+    received = []
+    await sync(FakeCloud(error), received).fetch()
+    assert received == []
+    assert f"cloud map for dev unavailable: {error}" in caplog.text
 
 
 async def test_an_unexpected_error_is_logged_and_the_next_fetch_still_runs(caplog):

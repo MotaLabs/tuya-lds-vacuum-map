@@ -309,6 +309,28 @@ def test_unreadable_saved_colors_are_replaced(tmp_path, caplog):
     assert session.unsaved
 
 
+def path_chunk(start: int, points: list[list[int]]) -> str:
+    return encode_raw({"infoType": 21011, "data": {"pathID": 1, "startPos": start, "posArray": points}})
+
+
+async def test_map_attributes_follow_the_robot(harness):
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    await harness.dp(DPS.path, path_chunk(0, [[0, 0], [100, 200]]))
+    await session.redraw()
+    first = json.loads(harness.client.last(session.topics.map_attributes))
+    await harness.dp(DPS.path, path_chunk(2, [[300, 200]]))
+    await session.redraw()
+    second = json.loads(harness.client.last(session.topics.map_attributes))
+    assert (first["robot_position"], second["robot_position"]) == ({"x": 100, "y": 200}, {"x": 300, "y": 200})
+
+
+async def test_map_attributes_have_no_position_before_the_path(harness):
+    harness.session().on_cloud_payload(cloud_payload())
+    await harness.session().redraw()
+    assert json.loads(harness.client.last(harness.session().topics.map_attributes))["robot_position"] is None
+
+
 async def test_map_attributes_list_room_colors(harness):
     harness.session().on_cloud_payload(cloud_payload())
     await harness.dp(DPS.raw, encode_raw(rooms_message()))

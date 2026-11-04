@@ -244,9 +244,11 @@ class RobotSession:
         if scene is None:
             return
         image, calibration = await asyncio.to_thread(self.renderer.render, scene)
+        position = self.robot.path.position
         attributes = {
             "calibration_points": calibration,
             "robot_state": self.robot.state,
+            "robot_position": {"x": position[0], "y": position[1]} if position else None,
             "map_source": self.snapshot.source.value,
             "rooms": [
                 {"id": room.id, "name": room.name, "color": format_color(self.room_colors[room.id])}

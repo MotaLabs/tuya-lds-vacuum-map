@@ -196,7 +196,7 @@ The service creates, through MQTT discovery:
 
 | Entity | What it is |
 |---|---|
-| `camera.<device>_map` | The map, with `calibration_points`, `robot_state`, `map_source` and `rooms` (id, name, color) attributes |
+| `camera.<device>_map` | The map, with `calibration_points`, `robot_state`, `robot_position`, `map_source` and `rooms` (id, name, color) attributes; the position changes as the robot moves, so a card that redraws when the camera changes follows it |
 | `select.<device>_map_source` | `Automatic` or `Local only` |
 | `select.<device>_room_settings` | The room picked by a double tap, or `None` |
 | `text.<device>_room_color` | The picked room's color as `#rrggbb`; write a new one to change it |

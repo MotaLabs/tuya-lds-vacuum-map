@@ -78,7 +78,7 @@ areas = st.fixed_dictionaries(
         "mode": st.sampled_from(WORDS) | st.text(max_size=4),
         "active": st.sampled_from(WORDS),
         "tag": names,
-        "name": labels,
+        "name": st.text(max_size=8),
         "isWall": st.booleans(),
     },
 )

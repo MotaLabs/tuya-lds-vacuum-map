@@ -78,7 +78,8 @@ anything else from a real home.
   reach it; a change no test notices survives. `uv run mutmut results` lists the survivors and
   `uv run mutmut show <name>` shows one. Log lines are left alone. Under mutmut, Hypothesis runs with a fixed
   seed and no example database, so the same code gives the same survivors. By default it takes every core;
-  add `--max-children 4` to keep the machine usable.
+  add `--max-children 4` to keep the machine usable. CI runs it on every merge to `main` and on demand (the
+  Mutation workflow), with the totals in the run summary and the survivors in the `mutation-report` artifact.
 
 ## Pull requests
 

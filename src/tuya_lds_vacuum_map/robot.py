@@ -35,6 +35,7 @@ class Robot:
         self.room_mode = room_mode
         self.path = PathTracker()
         self.spot: tuple[Point, ...] | None = None
+        self.spot_command: dict[str, Any] | None = None
 
     @property
     def moving(self) -> bool:
@@ -84,6 +85,7 @@ class Robot:
             self.room_message = message
             update.redraw = True
         spot = spot_in_commands(message)
-        if spot:
+        if spot and message != self.spot_command:
+            self.spot_command = message
             self.spot = spot
             update.redraw = True

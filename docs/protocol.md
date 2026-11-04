@@ -84,6 +84,10 @@ The spot area is a square around the tapped point; its side comes from the robot
 map also shows the square for a spot clean started from the app. `active`, `id`, `name` and `tag` are
 copied from what the app sends; their meaning is unknown and the robot accepts them as they are.
 
+DP 127 keeps the last command after the job ends, and localtuya's `localtuya_status_update` event carries
+every data point, DP 127 included, about every 2 s while the robot is active. The same command therefore
+arrives many times, long after its clean is over; the service takes a spot from each command only once.
+
 These message types and command shapes are this robot family's own JSON protocol, carried by Tuya over
 DP 127. Tuya's standard laser robot protocol is a different one, with numbered binary commands
 ([RobotProtocol](https://developer.tuya.com/material/library_oHEKLjj0/component/RobotProtocol.md)).

@@ -105,6 +105,19 @@ def test_the_spot_border_shows_on_a_room_of_its_color(payload):
     assert any(min(image.getpixel((x, row))) > 200 for x in range(3 * SCALE, 20 * SCALE))
 
 
+def test_the_spot_border_grows_with_the_map_scale(payload):
+    grid = GridMap.from_cloud(payload)
+    spot = tuple(tuple(vertex) for vertex in commands.spot_square(*cell_center_mm(10, 14), 500))
+    for scale in (4, 8):
+        png, points = Renderer(CODES, Style(scale=scale)).render(
+            Scene(grid, rooms=UNNAMED, room_colors=COLORS, spot=spot)
+        )
+        image = Image.open(io.BytesIO(png)).convert("RGB")
+        x, y = to_map(points, *spot[0])
+        column = [image.getpixel((x + 3, y + dy)) for dy in range(-scale, scale + 1)]
+        assert sum(1 for pixel in column if pixel == STYLE.spot[:3]) >= scale
+
+
 def test_an_area_under_the_spot_keeps_its_border(payload):
     grid = GridMap.from_cloud(payload)
     area = Area(1, "area", "normal", "", ((-750, 50), (-250, 50), (-250, 550), (-750, 550)))

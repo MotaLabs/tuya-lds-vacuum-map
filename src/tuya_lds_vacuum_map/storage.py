@@ -40,6 +40,10 @@ class Storage:
     def save(self, snapshot: Snapshot) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         handle, temporary = tempfile.mkstemp(dir=self.path.parent, prefix=".state-", suffix=".json")
-        with os.fdopen(handle, "w", encoding="utf-8") as out:
-            json.dump(asdict(snapshot), out, ensure_ascii=False, separators=(",", ":"))
-        os.replace(temporary, self.path)
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as out:
+                json.dump(asdict(snapshot), out, separators=(",", ":"))
+            os.replace(temporary, self.path)
+        except BaseException:
+            os.unlink(temporary)
+            raise

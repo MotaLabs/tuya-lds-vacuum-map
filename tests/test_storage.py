@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from tuya_lds_vacuum_map.storage import MapSource, Snapshot, Storage
 
 
@@ -28,3 +30,17 @@ def test_unknown_keys_and_sources_are_ignored(tmp_path):
     snapshot = Storage(path).load()
     assert snapshot.robot_state == "idle"
     assert snapshot.source is MapSource.AUTO
+
+
+def test_text_that_is_not_valid_unicode_is_saved(tmp_path):
+    storage = Storage(tmp_path / "state.json")
+    snapshot = Snapshot(cloud_map={"name": "Su\ud800íte"}, selected_room="\udfff")
+    storage.save(snapshot)
+    assert storage.load() == snapshot
+
+
+def test_a_failed_save_leaves_no_temporary_file(tmp_path):
+    (tmp_path / "state.json").mkdir()
+    with pytest.raises(IsADirectoryError):
+        Storage(tmp_path / "state.json").save(Snapshot())
+    assert [path.name for path in tmp_path.iterdir()] == ["state.json"]

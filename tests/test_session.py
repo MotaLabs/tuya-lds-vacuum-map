@@ -191,6 +191,20 @@ async def test_the_save_loop_writes_each_change_once(harness, change):
     assert len(writes) == 1
 
 
+async def test_a_state_that_cannot_be_saved_is_logged_and_saved_later(tmp_path, caplog):
+    harness = Harness(tmp_path)
+    session = harness.session()
+    session.unsaved = True
+    (tmp_path / DEVICE).write_text("")
+    session.save()
+    assert session.unsaved
+    assert "the state could not be saved" in caplog.text
+    (tmp_path / DEVICE).unlink()
+    session.save()
+    assert not session.unsaved
+    assert session.storage.path.exists()
+
+
 async def test_state_survives_a_restart(tmp_path):
     first = Harness(tmp_path)
     first.session().on_cloud_payload(cloud_payload())

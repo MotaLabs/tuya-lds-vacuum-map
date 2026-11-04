@@ -265,18 +265,22 @@ class RobotSession:
                 self.save()
 
     def save(self) -> None:
-        self.storage.save(
-            Snapshot(
-                room_message=self.robot.room_message,
-                robot_state=self.robot.state,
-                room_mode=self.robot.room_mode,
-                cloud_map=self.map.cloud_payload,
-                source=self.snapshot.source,
-                selected_room=self.snapshot.selected_room,
-                coverage=self.map.coverage.to_list(),
-                room_colors={str(room_id): format_color(color) for room_id, color in self.room_colors.items()},
+        try:
+            self.storage.save(
+                Snapshot(
+                    room_message=self.robot.room_message,
+                    robot_state=self.robot.state,
+                    room_mode=self.robot.room_mode,
+                    cloud_map=self.map.cloud_payload,
+                    source=self.snapshot.source,
+                    selected_room=self.snapshot.selected_room,
+                    coverage=self.map.coverage.to_list(),
+                    room_colors={str(room_id): format_color(color) for room_id, color in self.room_colors.items()},
+                )
             )
-        )
+        except OSError as error:
+            log.warning("%s: the state could not be saved in %s: %s", self.label, self.storage.path, error)
+            return
         self.unsaved = False
 
 

@@ -112,8 +112,16 @@ services:
       LANGUAGE: en
       DEVICE_NAME: Robot vacuum
     volumes:
-      - ./vacuum-map:/data
+      - vacuum-map:/data
+
+volumes:
+  vacuum-map:
 ```
+
+The service runs as uid 1000 and keeps its state in `/data`. A named volume starts out owned by that user. A
+folder of your own works too if uid 1000 can write to it (`mkdir vacuum-map && sudo chown 1000:1000 vacuum-map`,
+then `./vacuum-map:/data`); a folder Docker creates for a bind mount belongs to root, and the state is then never
+saved, which the log says on every attempt.
 
 Every release publishes the image with three tags: the version (`0.1.0`), the git tag (`v0.1.0`) and
 `latest`. To run a change that is not released yet, build it from this repository with `docker build -t

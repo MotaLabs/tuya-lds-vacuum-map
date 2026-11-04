@@ -57,6 +57,7 @@ def test_robots_must_be_configured_once(tmp_path):
         ("robots = []\n", "no robots"),
         ('[[robots]]\nname = "Hall"\n', "invalid robots file"),
         ('[[robots]]\ndevice_id = ""\n', "needs a device_id"),
+        ('[[robots]]\ndevice_id = "one"\nprofile = 3\n', "profile of one must be a profile name"),
         ('[[robots]]\ndevice_id = "one"\ncolour = "red"\n', "colour"),
         ("[[robots]\n", "invalid robots file"),
         ('[robot]\ndevice_id = "one"\n', "invalid robots file"),

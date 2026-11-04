@@ -150,6 +150,8 @@ def _robot_entry(entry: dict[str, Any], folder: Path) -> RobotSettings:
     robot = RobotSettings(**entry)
     if not isinstance(robot.device_id, str) or not robot.device_id:
         raise ValueError("every robot needs a device_id")
+    if not isinstance(robot.profile, str):
+        raise ValueError(f"the profile of {robot.device_id} must be a profile name or a .toml file")
     if robot.profile.endswith(".toml") and not Path(robot.profile).is_absolute():
         return dataclasses.replace(robot, profile=str(folder / robot.profile))
     return robot

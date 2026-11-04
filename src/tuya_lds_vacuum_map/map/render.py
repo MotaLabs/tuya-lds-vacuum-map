@@ -224,7 +224,9 @@ class _Painter:
         draw = ImageDraw.Draw(overlay)
         draw.polygon(points, fill=(*self.style.spot[:3], 40))
         self.layer.alpha_composite(overlay)
-        self.dashed(points, self.style.spot)
+        width = max(2, self.style.scale)
+        self.draw.line([*points, points[0]], fill=(255, 255, 255, 230), width=width + 2, joint="curve")
+        self.dashed(points, self.style.spot, width)
 
     def dashed(self, points: list[tuple[float, float]], color: Color, width: int = 2, step: float = 8) -> None:
         for (x1, y1), (x2, y2) in zip(points, points[1:] + points[:1], strict=True):

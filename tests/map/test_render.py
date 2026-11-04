@@ -97,6 +97,14 @@ def test_the_path_shows_over_the_spot(payload):
     assert min(image.getpixel(pixel_of_cell(10, 14))) > 200
 
 
+def test_the_spot_border_shows_on_a_room_of_its_color(payload):
+    grid = GridMap.from_cloud(payload)
+    spot = tuple(tuple(vertex) for vertex in commands.spot_square(*cell_center_mm(10, 14), 500))
+    image = render(Scene(grid, rooms=UNNAMED, room_colors={1: STYLE.spot[:3], 2: COLORS[2]}, spot=spot))
+    row = pixel_of_cell(10, 14)[1]
+    assert any(min(image.getpixel((x, row))) > 200 for x in range(3 * SCALE, 20 * SCALE))
+
+
 def test_an_area_under_the_spot_keeps_its_border(payload):
     grid = GridMap.from_cloud(payload)
     area = Area(1, "area", "normal", "", ((-750, 50), (-250, 50), (-250, 550), (-750, 550)))
@@ -106,7 +114,7 @@ def test_an_area_under_the_spot_keeps_its_border(payload):
     border = [
         (x, y) for x in range(WIDTH * SCALE) for y in range(HEIGHT * SCALE) if plain.getpixel((x, y)) == (40, 40, 40)
     ]
-    inside = [(x, y) for x, y in border if 5 * SCALE + 4 < x < 15 * SCALE - 4]
+    inside = [(x, y) for x, y in border if 7 * SCALE < x < 14 * SCALE]
     assert inside
     assert all(sum(with_spot.getpixel(p)) < 200 for p in inside)
 

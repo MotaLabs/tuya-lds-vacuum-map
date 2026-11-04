@@ -85,7 +85,7 @@ class Robot:
             self.room_message = message
             update.redraw = True
         spot = spot_in_commands(message)
-        if spot and message != self.spot_command:
+        if spot and (message != self.spot_command or self.state in self.profile.states.spot):
             self.spot_command = message
             self.spot = spot
             update.redraw = True

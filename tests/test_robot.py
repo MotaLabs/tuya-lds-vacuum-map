@@ -82,6 +82,18 @@ def test_a_spot_command_read_again_does_not_bring_the_square_back():
     assert robot.spot == ((-500, -500), (500, -500), (500, 500), (-500, 500))
 
 
+def test_a_spot_clean_that_resumes_shows_its_square_again():
+    robot = Robot(PROFILE, state="standby")
+    command = commands.clean_spot(42, 0, 0, 1000, now_ms=1)
+    robot.apply({DPS.raw: command})
+    robot.apply({DPS.state: "pointing", DPS.raw: command})
+    robot.apply({DPS.state: "pause", DPS.raw: command})
+    robot.apply({DPS.state: "pointing", DPS.raw: command})
+    assert robot.spot == ((-500, -500), (500, -500), (500, 500), (-500, 500))
+    robot.apply({DPS.state: "tocharge", DPS.raw: command})
+    assert robot.spot is None
+
+
 def test_room_command_does_not_touch_the_spot():
     robot = Robot(PROFILE)
     update = robot.apply({DPS.raw: commands.clean_rooms(42, [1], now_ms=1)})

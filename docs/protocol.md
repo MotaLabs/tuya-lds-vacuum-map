@@ -86,7 +86,8 @@ copied from what the app sends; their meaning is unknown and the robot accepts t
 
 DP 127 keeps the last command after the job ends, and localtuya's `localtuya_status_update` event carries
 every data point, DP 127 included, about every 2 s while the robot is active. The same command therefore
-arrives many times, long after its clean is over; the service takes a spot from each command only once.
+arrives many times, long after its clean is over. The service takes a spot from a command it has already read
+only while the robot is in a spot state, so a paused spot clean shows its square again when it resumes.
 
 These message types and command shapes are this robot family's own JSON protocol, carried by Tuya over
 DP 127. Tuya's standard laser robot protocol is a different one, with numbered binary commands

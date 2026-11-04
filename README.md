@@ -25,7 +25,7 @@ the map into cleaning commands sent over the local network.
 | Done | Tap a room to clean it | Local command, no cloud |
 | Done | Tap an area to clean it | Uses the areas as they are on the robot |
 | Done | Double tap a room to open its settings | Selects the room on a Home Assistant select and fires an event |
-| Untried | Spot cleaning | Tap a point to send the app's spot command for a 1.5 m square, drawn while the robot works on it; not yet seen running on a robot ([#6](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/6)) |
+| Done | Spot cleaning | Tap a point, and the robot cleans the 1.5 m square around it; the map does not draw the square or the floor it covers yet ([#43](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/43)) |
 | Done | Map source switch | `Automatic` (cloud while it answers, local otherwise) or `Local only`, from Home Assistant |
 | Done | English and Brazilian Portuguese | Entity names and map labels |
 | Done | Several robots in one instance | Each robot gets its own device, map, topics and saved state; so far only one robot has run it |

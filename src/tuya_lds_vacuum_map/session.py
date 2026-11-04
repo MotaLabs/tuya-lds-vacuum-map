@@ -278,8 +278,14 @@ class RobotSession:
                     room_colors={str(room_id): format_color(color) for room_id, color in self.room_colors.items()},
                 )
             )
-        except OSError as error:
-            log.warning("%s: the state could not be saved in %s: %s", self.label, self.storage.path, error)
+        except Exception as error:
+            log.warning(
+                "%s: the state could not be saved in %s: %s: %s",
+                self.label,
+                self.storage.path,
+                type(error).__name__,
+                error,
+            )
             return
         self.unsaved = False
 

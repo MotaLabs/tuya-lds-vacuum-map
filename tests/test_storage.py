@@ -44,3 +44,9 @@ def test_a_failed_save_leaves_no_temporary_file(tmp_path):
     with pytest.raises(IsADirectoryError):
         Storage(tmp_path / "state.json").save(Snapshot())
     assert [path.name for path in tmp_path.iterdir()] == ["state.json"]
+
+
+def test_a_snapshot_that_cannot_be_written_leaves_no_temporary_file(tmp_path):
+    with pytest.raises(RecursionError):
+        Storage(tmp_path / "state.json").save(Snapshot(cloud_map={"deep": json.loads("[" * 2000 + "]" * 2000)}))
+    assert list(tmp_path.iterdir()) == []

@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import colorsys
 import json
 import random
@@ -203,6 +204,18 @@ async def test_a_state_that_cannot_be_saved_is_logged_and_saved_later(tmp_path, 
     session.save()
     assert not session.unsaved
     assert session.storage.path.exists()
+
+
+async def test_a_state_too_deep_to_save_is_logged_and_the_save_loop_keeps_going(harness, caplog):
+    message = json.dumps(rooms_message())[:-1] + ', "extra": ' + "[" * 2000 + "]" * 2000 + "}"
+    await harness.dp(DPS.raw, base64.b64encode(message.encode()).decode())
+    session = harness.session()
+    session.save()
+    assert session.unsaved
+    assert "the state could not be saved" in caplog.text
+    assert "RecursionError" in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
+    assert not session.storage.path.exists()
 
 
 async def test_state_survives_a_restart(tmp_path):

@@ -169,8 +169,10 @@ class _Painter:
         cx, cy = self.at(room.pos)
         box = self.draw.textbbox((0, 0), room.name, font=self.font)
         width, height = box[2] - box[0], box[3] - box[1]
+        left, top = round(cx - width / 2 - 10), round(cy - height / 2 - 7)
+        right, bottom = round(cx + width / 2 + 10), round(cy + height / 2 + 7)
         self.draw.rounded_rectangle(
-            (cx - width / 2 - 10, cy - height / 2 - 7, cx + width / 2 + 10, cy + height / 2 + 7),
+            (left, top, right, bottom),
             radius=14,
             fill=(255, 255, 255, 240),
             outline=(200, 200, 200, 255),

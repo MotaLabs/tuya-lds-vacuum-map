@@ -5,7 +5,7 @@ import random
 import tempfile
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 from support.fakes import FakeCloudSync
@@ -322,6 +322,9 @@ async def draw(updates: list[tuple[int, dict]]) -> list[str]:
 
 
 @given(accepted)
+@example(
+    [(DPS.raw, {"infoType": 21004, "data": {"autoAreaValue": [{"id": 0, "name": "1s4", "pos": [1, 0]}], "value": []}})]
+)
 def test_whatever_the_robot_accepts_can_be_drawn(updates):
     topic, *published = asyncio.run(draw(updates))
     assert topic in published

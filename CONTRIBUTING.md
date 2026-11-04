@@ -73,6 +73,12 @@ anything else from a real home.
 - `uv run pytest --cov` measures branch coverage and fails under 95%.
 - Every run writes `reports/junit.xml`, and a run with `--cov` also writes `reports/coverage.xml`. CI
   publishes both as the `test-reports` artifact of the pull request.
+- Coverage shows which lines ran, not whether a test would notice them going wrong. `uv run mutmut run`
+  changes the code one small step at a time (a `<` for a `<=`, a value for `None`) and runs the tests that
+  reach it; a change no test notices survives. `uv run mutmut results` lists the survivors and
+  `uv run mutmut show <name>` shows one. Log lines are left alone. Under mutmut, Hypothesis runs with a fixed
+  seed and no example database, so the same code gives the same survivors. By default it takes every core;
+  add `--max-children 4` to keep the machine usable.
 
 ## Pull requests
 

@@ -13,3 +13,4 @@ data/
 htmlcov/
 .hypothesis/
 reports/
+mutants/

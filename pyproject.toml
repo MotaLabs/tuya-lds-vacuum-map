@@ -18,6 +18,7 @@ tuya-lds-vacuum-map = "tuya_lds_vacuum_map.__main__:main"
 [dependency-groups]
 dev = [
     "hypothesis>=6.170.14",
+    "mutmut>=3.8.1",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=7.1.0",
@@ -56,6 +57,10 @@ skip_covered = true
 
 [tool.coverage.xml]
 output = "reports/coverage.xml"
+
+[tool.mutmut]
+source_paths = ["src"]
+do_not_mutate_patterns = ['^\s*log\.(debug|info|warning|error|exception)\(']
 
 [tool.ruff]
 line-length = 120

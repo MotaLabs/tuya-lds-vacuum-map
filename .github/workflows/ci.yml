@@ -32,6 +32,13 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync --frozen
       - run: uv run pytest --cov
+      - name: Publish the test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: reports/
+          retention-days: 14
 
   image:
     name: docker build, the image builds

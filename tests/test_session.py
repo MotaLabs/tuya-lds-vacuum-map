@@ -73,6 +73,9 @@ async def test_map_source_and_room_selects(harness):
     assert harness.client.last(harness.session().topics.room_settings) == "Right"
     await harness.message(harness.session().topics.room_settings_set, "None")
     assert harness.session().snapshot.selected_room is None
+    await harness.message(harness.session().topics.map_source_set, harness.session().texts.source_auto)
+    assert harness.session().snapshot.source is MapSource.AUTO
+    assert harness.client.last(harness.session().topics.map_source) == harness.session().texts.source_auto
 
 
 async def test_spot_tap_reaches_localtuya(harness):
@@ -81,6 +84,17 @@ async def test_spot_tap_reaches_localtuya(harness):
     [(domain, service, data)] = harness.services
     assert (domain, service, data["device_id"], data["dp"]) == ("localtuya", "set_dp", DEVICE, DPS.raw)
     assert decode_raw(data["value"])["data"]["cmds"][0]["data"]["extraAreas"][0]["mode"] == "point"
+
+
+async def test_a_tap_without_a_mode_cleans_the_room(harness):
+    harness.session().on_cloud_payload(cloud_payload())
+    await harness.dp(DPS.raw, encode_raw(rooms_message()))
+    harness.session().scene()
+    x, y = cell_center_mm(30, 14)
+    await harness.message(harness.session().topics.tap, json.dumps({"x": x, "y": y}))
+    await eventually(lambda: harness.services)
+    [(_, _, data)] = harness.services
+    assert decode_raw(data["value"])["data"]["cmds"][0]["data"]["segmentId"] == [2]
 
 
 async def test_double_tap_opens_the_room_settings(harness):
@@ -123,6 +137,60 @@ async def test_render_loop_publishes_the_map(harness):
     assert attributes["map_source"] == "auto"
 
 
+async def test_running_a_session_draws_saves_and_syncs_the_cloud_map(harness, tmp_path):
+    session = harness.session()
+    session.cloud_sync = sync = FakeCloudSync()
+    session.on_cloud_payload(cloud_payload())
+    task = asyncio.create_task(session.run())
+    await eventually(
+        lambda: (
+            session.topics.map in harness.client.topics()
+            and (tmp_path / DEVICE / "state.json").exists()
+            and "run" in sync.calls
+        )
+    )
+    await stop(task)
+
+
+async def choose_the_local_map(harness: Harness) -> None:
+    await harness.message(harness.session().topics.map_source_set, "Local only")
+
+
+async def choose_the_left_room(harness: Harness) -> None:
+    await harness.message(harness.session().topics.room_settings_set, "Left")
+
+
+async def color_the_room(harness: Harness) -> None:
+    await harness.message(harness.session().topics.room_color_set, "#123456")
+
+
+async def color_the_room_at_random(harness: Harness) -> None:
+    await harness.message(harness.session().topics.room_color_random, "")
+
+
+async def open_the_room_settings(harness: Harness) -> None:
+    session = harness.session()
+    await session.open_room_settings(session.robot.rooms.rooms[0])
+
+
+@pytest.mark.parametrize(
+    "change",
+    [choose_the_local_map, choose_the_left_room, color_the_room, color_the_room_at_random, open_the_room_settings],
+)
+async def test_the_save_loop_writes_each_change_once(harness, change):
+    await select_right(harness)
+    session = harness.session()
+    session.save()
+    writes = []
+    session.storage.save = writes.append
+    task = asyncio.create_task(session.save_loop())
+    await change(harness)
+    await eventually(lambda: writes)
+    await asyncio.sleep(0.05)
+    await stop(task)
+    assert len(writes) == 1
+
+
 async def test_state_survives_a_restart(tmp_path):
     first = Harness(tmp_path)
     first.session().on_cloud_payload(cloud_payload())
@@ -132,9 +200,12 @@ async def test_state_survives_a_restart(tmp_path):
         DPS.path, encode_raw({"infoType": 21011, "data": {"pathID": 1, "startPos": 0, "posArray": [[0, 0]]}})
     )
     await first.message(first.session().topics.map_source_set, "Local only")
+    await first.dp(DPS.room_mode, True)
+    await first.message(first.session().topics.room_settings_set, "Right")
     first.session().save()
     second = Harness(tmp_path).session()
     assert second.robot.rooms.names == ["Left", "Right"]
+    assert (second.robot.room_mode, second.snapshot.selected_room) == (True, "Right")
     assert (second.robot.state, second.snapshot.source, second.map.map_id) == ("totaling", MapSource.LOCAL, 42)
     assert second.map.coverage.cells == first.session().map.coverage.cells
 

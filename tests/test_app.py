@@ -6,10 +6,12 @@ import pytest
 
 from support.harness import DEVICE, Harness
 from support.maps import PROFILE, cloud_payload, rooms_message
+from support.waiting import eventually, stop
 from tuya_lds_vacuum_map.config import RobotSettings
+from tuya_lds_vacuum_map.integrations.localtuya import DP_EVENT
 from tuya_lds_vacuum_map.lds.codec import decode_raw, encode_raw
 from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, DataPoints
-from tuya_lds_vacuum_map.storage import Storage
+from tuya_lds_vacuum_map.storage import MapSource, Storage
 
 OTHER = "other987654"
 CUSTOM = dataclasses.replace(PROFILE, name="custom", data_points=DataPoints(state=1, path=2, raw=200))
@@ -72,6 +74,40 @@ async def test_robots_keep_separate_state(harness, tmp_path):
         session.save()
     assert Storage(tmp_path / DEVICE / "state.json").load().robot_state == "totaling"
     assert Storage(tmp_path / OTHER / "state.json").load().robot_state == "chargring"
+
+
+async def test_running_feeds_every_robot_from_home_assistant_and_mqtt(harness):
+    started = []
+
+    def starter(device_id: str):
+        async def run() -> None:
+            started.append(device_id)
+            await asyncio.Event().wait()
+
+        return run
+
+    async def ha_run(event_types, on_event) -> None:
+        assert DP_EVENT in event_types
+        await on_event(DP_EVENT, {"device_id": DEVICE, "dp": DPS.state, "value": "totaling"})
+        await asyncio.Event().wait()
+
+    async def mqtt_run(topics, on_connect, on_message) -> None:
+        source_set = harness.session().topics.map_source_set
+        assert source_set in topics
+        await on_connect()
+        await on_message(source_set, "Local only")
+        await asyncio.Event().wait()
+
+    for device_id, session in harness.app.sessions.items():
+        session.run = starter(device_id)
+    harness.app.ha.run, harness.app.mqtt.run = ha_run, mqtt_run
+    task = asyncio.create_task(harness.app.run())
+    await eventually(
+        lambda: harness.session().snapshot.source is MapSource.LOCAL and sorted(started) == sorted(harness.app.sessions)
+    )
+    await stop(task)
+    assert harness.session().robot.state == "totaling"
+    assert any(topic.endswith("/config") for topic in harness.client.topics())
 
 
 async def test_stopping_saves_every_robot(harness, tmp_path):

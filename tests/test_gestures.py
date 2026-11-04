@@ -84,14 +84,15 @@ async def test_tap_on_an_area_cleans_the_areas(setup):
     await eventually(lambda: setup.sender.sent)
     [cmds] = setup.targets()
     assert cmds[0]["infoType"] == 21003
-    assert cmds[0]["data"]["value"] == rooms_message()["data"]["value"]
-    assert cmds[1]["data"]["cleanId"] == [-2]
+    assert cmds[0]["data"] == {"mapId": 42, "value": rooms_message()["data"]["value"]}
+    assert cmds[1]["data"] == {"cleanId": [-2], "extraAreas": [], "mapId": 42}
 
 
 async def test_spot_is_sent_at_once_and_shown(setup):
     await setup.taps.tap(TapMode.ROOM, *LEFT)
     await setup.taps.tap(TapMode.SPOT, 0, 0)
     [cmds] = setup.targets()
+    assert cmds[0]["data"]["mapId"] == 42
     assert cmds[0]["data"]["extraAreas"][0]["vertexs"] == [[-750, -750], [750, -750], [750, 750], [-750, 750]]
     assert setup.robot.spot == ((-750, -750), (750, -750), (750, 750), (-750, 750))
     await asyncio.sleep(WINDOW * 3)

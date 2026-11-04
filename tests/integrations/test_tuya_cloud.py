@@ -39,6 +39,21 @@ class FakeHttp:
         ]
 
 
+class Clock:
+    def __init__(self) -> None:
+        self.now = 1_000_000.0
+
+    def time(self) -> float:
+        return self.now
+
+
+@pytest.fixture
+def clock(monkeypatch) -> Clock:
+    fake = Clock()
+    monkeypatch.setattr(tuya_cloud, "time", fake)
+    return fake
+
+
 @pytest.fixture
 def http(monkeypatch) -> FakeHttp:
     fake = FakeHttp()
@@ -58,10 +73,27 @@ async def test_the_token_is_reused(http):
     assert http.urls().count(BASE + TOKEN_PATH) == 1
 
 
-async def test_requests_are_signed(http):
+@pytest.mark.parametrize(
+    ("answer", "lifetime"),
+    [({"access_token": "tok", "expire_time": 7200}, 7200), ({"access_token": "tok"}, 3600)],
+)
+async def test_the_token_is_renewed_a_minute_before_it_expires(http, clock, answer, lifetime):
+    http.answers[BASE + TOKEN_PATH] = [{"success": True, "result": answer}]
+    cloud = TuyaCloud("id", "secret", "us")
+    await cloud.realtime_map("dev")
+    clock.now += lifetime - 61
+    await cloud.realtime_map("dev")
+    assert http.urls().count(BASE + TOKEN_PATH) == 1
+    clock.now += 1
+    await cloud.realtime_map("dev")
+    assert http.urls().count(BASE + TOKEN_PATH) == 2
+
+
+async def test_requests_are_signed(http, clock):
     await TuyaCloud("id", "secret", "us").realtime_map("dev")
     request = http.requests[1]
     t, nonce = request.get_header("T"), request.get_header("Nonce")
+    assert t == "1000000000"
     signed = "id" + "tok" + t + nonce + "GET\n" + hashlib.sha256(b"").hexdigest() + "\n\n" + FILES_PATH
     expected = hmac.new(b"secret", signed.encode(), hashlib.sha256).hexdigest().upper()
     assert request.get_header("Sign") == expected
@@ -69,15 +101,16 @@ async def test_requests_are_signed(http):
     assert request.get_header("Sign_method") == "HMAC-SHA256"
 
 
-async def test_a_rejected_token_is_fetched_again(http):
+@pytest.mark.parametrize("code", [1010, 1011])
+async def test_a_rejected_token_is_fetched_again(http, code):
     http.answers[BASE + FILES_PATH] = [
-        {"success": False, "code": 1010, "msg": "token invalid"},
+        {"success": False, "code": code, "msg": "token invalid"},
         {"success": True, "result": FILES},
     ]
     cloud = TuyaCloud("id", "secret", "us")
     with pytest.raises(TuyaCloudError, match="token invalid") as error:
         await cloud.realtime_map("dev")
-    assert error.value.code == 1010
+    assert error.value.code == code
     assert await cloud.realtime_map("dev") == LAYOUT
     assert http.urls().count(BASE + TOKEN_PATH) == 2
 

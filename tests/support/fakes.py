@@ -1,3 +1,6 @@
+import asyncio
+
+
 class FakeClient:
     def __init__(self) -> None:
         self.published: list[tuple] = []
@@ -21,3 +24,7 @@ class FakeCloudSync:
 
     def wake_after_cleaning(self) -> None:
         self.calls.append("after_cleaning")
+
+    async def run(self) -> None:
+        self.calls.append("run")
+        await asyncio.Event().wait()

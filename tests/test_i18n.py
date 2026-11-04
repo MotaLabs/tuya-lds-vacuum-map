@@ -47,6 +47,13 @@ def test_bad_translation_files(tmp_path, text, message):
         load_texts(str(path))
 
 
+def test_a_translation_file_that_is_not_utf8_is_an_error(tmp_path):
+    path = tmp_path / "mine.toml"
+    path.write_bytes(b'map = "\xff"\n')
+    with pytest.raises(TranslationError, match="cannot be read"):
+        load_texts(str(path))
+
+
 def test_unknown_languages_are_errors(tmp_path):
     with pytest.raises(TranslationError, match=r"built-in ones: .*pt-BR"):
         load_texts("xx")

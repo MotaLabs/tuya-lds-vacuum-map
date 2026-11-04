@@ -47,7 +47,10 @@ def _read(language: str) -> dict[str, Any]:
         path = Path(language)
         if not path.is_file():
             raise TranslationError(f"translation file not found: {language}")
-        text = path.read_text(encoding="utf-8")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as error:
+            raise TranslationError(f"translation file {language} cannot be read: {error}") from error
     else:
         resource = _FOLDER / f"{language}.toml"
         if not resource.is_file():

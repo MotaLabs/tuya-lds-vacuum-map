@@ -92,7 +92,7 @@ class Renderer:
             .resize((grid.width * scale, grid.height * scale), Image.Resampling.NEAREST)
         )
         layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
-        _Painter(ImageDraw.Draw(layer), grid, style).paint(scene)
+        _Painter(layer, grid, style).paint(scene)
         canvas = Image.new("RGBA", base.size, style.background)
         canvas.alpha_composite(base)
         canvas.alpha_composite(layer)
@@ -118,8 +118,9 @@ class Renderer:
 
 
 class _Painter:
-    def __init__(self, draw: ImageDraw.ImageDraw, grid: GridMap, style: Style) -> None:
-        self.draw = draw
+    def __init__(self, layer: Image.Image, grid: GridMap, style: Style) -> None:
+        self.layer = layer
+        self.draw = ImageDraw.Draw(layer)
         self.grid = grid
         self.style = style
         self.font = load_font(15, style.font_path)
@@ -134,12 +135,10 @@ class _Painter:
     def paint(self, scene: Scene) -> None:
         for area in scene.areas:
             self.area(area)
+        if scene.spot and len(scene.spot) >= 3:
+            self.spot([self.at(v) for v in scene.spot])
         if len(scene.path) > 1:
             self.draw.line([self.at(p) for p in scene.path], fill=self.style.path, width=2, joint="curve")
-        if scene.spot and len(scene.spot) >= 3:
-            points = [self.at(v) for v in scene.spot]
-            self.draw.polygon(points, fill=(*self.style.spot[:3], 40))
-            self.dashed(points, self.style.spot)
         for room in scene.rooms:
             if room.pos and room.name:
                 self.room_label(room, scene)
@@ -219,6 +218,15 @@ class _Painter:
             (x - 11, y - 11, x + 11, y + 11), fill=(255, 255, 255, 255), outline=(60, 60, 60, 255), width=2
         )
         self.draw.ellipse((x - 4, y - 4, x + 4, y + 4), fill=(60, 60, 60, 255))
+
+    def spot(self, points: list[tuple[float, float]]) -> None:
+        overlay = Image.new("RGBA", self.layer.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+        draw.polygon(points, fill=(*self.style.spot[:3], 40))
+        self.layer.alpha_composite(overlay)
+        width = max(2, self.style.scale)
+        self.draw.line([*points, points[0]], fill=(255, 255, 255, 230), width=width + 2, joint="curve")
+        self.dashed(points, self.style.spot, width)
 
     def dashed(self, points: list[tuple[float, float]], color: Color, width: int = 2, step: float = 8) -> None:
         for (x1, y1), (x2, y2) in zip(points, points[1:] + points[:1], strict=True):

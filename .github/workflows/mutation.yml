@@ -1,0 +1,46 @@
+name: Mutation
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation
+  cancel-in-progress: true
+
+env:
+  UV_PYTHON: "3.12"
+
+jobs:
+  mutmut:
+    name: mutmut, mutation report
+    runs-on: [self-hosted, motalabs]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: uv sync --frozen
+      - run: nice -n 10 uv run mutmut run --max-children 4
+      - name: Write the report
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          uv run mutmut export-cicd-stats
+          cp mutants/mutmut-cicd-stats.json reports/mutation.json
+          uv run mutmut results > reports/mutation-survivors.txt
+          jq -r '"| killed | survived | timeout | no tests | total |",
+                 "|---|---|---|---|---|",
+                 "| \(.killed) | \(.survived) | \(.timeout) | \(.no_tests) | \(.total) |"' \
+            reports/mutation.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish the mutation report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report
+          path: reports/
+          retention-days: 30

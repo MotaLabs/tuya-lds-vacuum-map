@@ -1,0 +1,18 @@
+map = "Mapa"
+map_source = "Origem do mapa"
+source_auto = "Automático"
+source_local = "Só local"
+room_settings = "Ajustes do cômodo"
+room_color = "Cor do cômodo"
+random_room_color = "Sortear cor do cômodo"
+no_room = "Nenhum"
+
+[levels]
+quiet = "Eco"
+standard = "Padrão"
+strong = "Forte"
+max = "Máx"
+mop = "Pano"
+low = "Baixo"
+medium = "Médio"
+high = "Alto"

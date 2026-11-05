@@ -1,0 +1,71 @@
+[project]
+name = "tuya-lds-vacuum-map"
+version = "0.1.0"
+description = "Map bridge for Tuya LDS (laser) robot vacuums in Home Assistant"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "aiomqtt>=2.3",
+    "lz4>=4.3",
+    "pillow>=11.0",
+    "websockets>=14.0",
+]
+
+[project.scripts]
+tuya-lds-vacuum-map = "tuya_lds_vacuum_map.__main__:main"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.170.14",
+    "mutmut>=3.8.1",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.3",
+]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib",
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+    "--junitxml=reports/junit.xml",
+    "--cov-report=term-missing:skip-covered",
+    "--cov-report=xml",
+]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["error"]
+pythonpath = ["tests"]
+testpaths = ["tests"]
+xfail_strict = true
+
+[tool.coverage.run]
+branch = true
+source = ["tuya_lds_vacuum_map"]
+
+[tool.coverage.report]
+fail_under = 95
+show_missing = true
+skip_covered = true
+
+[tool.coverage.xml]
+output = "reports/coverage.xml"
+
+[tool.mutmut]
+source_paths = ["src"]
+do_not_mutate_patterns = ['^\s*log\.(debug|info|warning|error|exception)\(']
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4", "PIE", "RET", "PT", "ASYNC", "RUF"]

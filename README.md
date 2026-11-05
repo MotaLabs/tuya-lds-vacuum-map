@@ -25,13 +25,15 @@ the map into cleaning commands sent over the local network.
 | Done | Tap a room to clean it | Local command, no cloud |
 | Done | Tap an area to clean it | Uses the areas as they are on the robot |
 | Done | Double tap a room to open its settings | Selects the room on a Home Assistant select and fires an event |
-| Done | Spot cleaning | Tap a point, the 1.5 m square is drawn while the robot works on it |
+| Done | Spot cleaning | Tap a point, and the robot cleans the 1.5 m square around it; the map does not draw the square or the floor it covers yet ([#43](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/43)) |
 | Done | Map source switch | `Automatic` (cloud while it answers, local otherwise) or `Local only`, from Home Assistant |
 | Done | English and Brazilian Portuguese | Entity names and map labels |
 | Done | Several robots in one instance | Each robot gets its own device, map, topics and saved state; so far only one robot has run it |
-| Planned | Draw an area and clean it | Needs the app's zone command captured ([roadmap](#roadmap)) |
-| Planned | Clean one area when the robot has several | Today a tap on an area cleans all of the robot's areas |
-| Planned | Edit room settings, areas and no-go zones from the map | Today they are edited in the app or through Home Assistant helpers |
+| Planned | Clean several rooms or points in the order tapped | Tap modes with a list and a start that waits for the last tap ([#4](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/4), [#5](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/5)) |
+| Planned | Draw an area and clean it | Needs the app's zone command captured ([#7](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/7)) |
+| Planned | Clean one area when the robot has several | Today a tap on an area cleans all of the robot's areas ([#8](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/8)) |
+| Planned | Room settings, parts, warnings and statistics from the service | Today they need Home Assistant helpers, templates and automations ([milestone 0.4](https://github.com/MotaLabs/tuya-lds-vacuum-map/milestone/3)) |
+| Planned | Edit areas and no-go zones from the map | Today they are edited in the app ([#15](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/15)) |
 | Not possible | Live map without the cloud | The robot only sends the path locally; the walls go to the cloud ([why](docs/protocol.md#data-points)) |
 
 ## How it works
@@ -110,10 +112,19 @@ services:
       LANGUAGE: en
       DEVICE_NAME: Robot vacuum
     volumes:
-      - ./vacuum-map:/data
+      - vacuum-map:/data
+
+volumes:
+  vacuum-map:
 ```
 
-The image is not published yet; until it is, build it from this repository with `docker build -t
+The service runs as uid 1000 and keeps its state in `/data`. A named volume starts out owned by that user. A
+folder of your own works too if uid 1000 can write to it (`mkdir vacuum-map && sudo chown 1000:1000 vacuum-map`,
+then `./vacuum-map:/data`); a folder Docker creates for a bind mount belongs to root, and the state is then never
+saved, which the log says on every attempt.
+
+Every release publishes the image with three tags: the version (`0.1.0`), the git tag (`v0.1.0`) and
+`latest`. To run a change that is not released yet, build it from this repository with `docker build -t
 tuya-lds-vacuum-map .`.
 
 ### Several robots
@@ -195,7 +206,7 @@ The service creates, through MQTT discovery:
 
 | Entity | What it is |
 |---|---|
-| `camera.<device>_map` | The map, with `calibration_points`, `robot_state`, `map_source` and `rooms` (id, name, color) attributes |
+| `camera.<device>_map` | The map, with `calibration_points`, `robot_state`, `robot_position`, `map_source` and `rooms` (id, name, color) attributes; the position changes as the robot moves, so a card that redraws when the camera changes follows it |
 | `select.<device>_map_source` | `Automatic` or `Local only` |
 | `select.<device>_room_settings` | The room picked by a double tap, or `None` |
 | `text.<device>_room_color` | The picked room's color as `#rrggbb`; write a new one to change it |
@@ -252,14 +263,10 @@ from the saved map and the live path, so nothing breaks; the walls simply stop u
 ## Roadmap
 
 Planned work is tracked as [issues](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues) grouped in
-[milestones](https://github.com/MotaLabs/tuya-lds-vacuum-map/milestones). In short:
-
-- **0.2, ship it**: container image published by CI, Home Assistant add-on packaging, a dashboard example.
-- **0.3, more cleaning**: draw an area and clean it, clean one area among several, show the robot heading.
-- **0.4, edit from the map**: room settings, areas and no-go zones written to the robot from Home Assistant.
-- **Local map**: better room borders for the covered floor (walking distance instead of straight-line),
-  forgetting floor that was not seen for a long time, and a map with no cloud from the start.
-- **More robots**: every confirmed model listed above.
+[milestones](https://github.com/MotaLabs/tuya-lds-vacuum-map/milestones). The direction: first make it easy
+to install, then move into this service everything a robot still needs from Home Assistant helpers and
+automations, and then ship it as a Home Assistant integration. Support for more robots comes from
+[robot support issues](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/new?template=robot-support.yml).
 
 ## Contributing
 

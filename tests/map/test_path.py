@@ -1,0 +1,61 @@
+from hypothesis import given
+from hypothesis import strategies as st
+
+from tuya_lds_vacuum_map.lds.messages import PathChunk
+from tuya_lds_vacuum_map.map.path import PathTracker
+
+
+def chunk(path_id: int, start: int, points: list[list[int]], total: int | None = None) -> PathChunk:
+    return PathChunk(path_id, start, tuple((x, y) for x, y in points), total)
+
+
+def test_first_chunk_starts_the_path():
+    tracker = PathTracker()
+    assert tracker.position is None
+    assert tracker.update(chunk(1, 0, [[0, 0], [10, 0]])) == [(0, 0), (10, 0)]
+    assert tracker.position == (10, 0)
+
+
+def test_next_chunk_returns_the_joint_with_the_new_points():
+    tracker = PathTracker()
+    tracker.update(chunk(1, 0, [[0, 0], [10, 0]]))
+    assert tracker.update(chunk(1, 2, [[20, 0]])) == [(10, 0), (20, 0)]
+    assert tracker.points == [(0, 0), (10, 0), (20, 0)]
+
+
+def test_resent_chunk_replaces_the_tail():
+    tracker = PathTracker()
+    tracker.update(chunk(1, 0, [[0, 0], [10, 0], [20, 0]]))
+    tracker.update(chunk(1, 1, [[10, 5], [20, 5]]))
+    assert tracker.points == [(0, 0), (10, 5), (20, 5)]
+
+
+def test_new_path_id_starts_over_even_with_an_offset():
+    tracker = PathTracker()
+    tracker.update(chunk(1, 0, [[0, 0], [10, 0]]))
+    assert tracker.update(chunk(2, 5, [[50, 50]])) == [(50, 50)]
+    assert tracker.points == [(50, 50)]
+    assert tracker.path_id == 2
+
+
+def test_total_points_trims_the_path():
+    tracker = PathTracker()
+    tracker.update(chunk(1, 0, [[0, 0], [10, 0], [20, 0]]))
+    tracker.update(chunk(1, 1, [[10, 0]], total=2))
+    assert tracker.points == [(0, 0), (10, 0)]
+
+
+coordinates = st.integers(-1_000_000, 1_000_000)
+
+
+@given(st.lists(st.tuples(coordinates, coordinates), min_size=1, max_size=40), st.data())
+def test_any_split_into_chunks_rebuilds_the_path(points, data):
+    cuts = sorted(data.draw(st.sets(st.integers(1, len(points) - 1)))) if len(points) > 1 else []
+    tracker = PathTracker()
+    start = 0
+    for end in [*cuts, len(points)]:
+        tracker.update(chunk(7, start, [list(point) for point in points[start:end]], total=end))
+        start = end
+    assert tracker.points == points
+    tracker.update(chunk(7, 0, [list(point) for point in points[: len(points) // 2]], total=len(points) // 2))
+    assert tracker.points == points[: len(points) // 2]

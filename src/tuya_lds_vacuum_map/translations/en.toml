@@ -1,0 +1,18 @@
+map = "Map"
+map_source = "Map source"
+source_auto = "Automatic"
+source_local = "Local only"
+room_settings = "Room settings"
+room_color = "Room color"
+random_room_color = "Random room color"
+no_room = "None"
+
+[levels]
+quiet = "Quiet"
+standard = "Standard"
+strong = "Strong"
+max = "Max"
+mop = "Mop"
+low = "Low"
+medium = "Medium"
+high = "High"

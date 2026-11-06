@@ -15,7 +15,7 @@ concurrency:
 jobs:
   release:
     name: Tag the next version and publish the image
-    runs-on: [self-hosted, motalabs]
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       packages: write
@@ -71,7 +71,6 @@ jobs:
         env:
           TAG: ${{ steps.version.outputs.tag }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DOCKER_BUILDKIT: "0"
         run: |
           set -euo pipefail
           echo "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
@@ -83,9 +82,3 @@ jobs:
           for tag in "${TAG#v}" "$TAG" latest; do
             docker push "$IMAGE:$tag"
           done
-
-      - name: Clean up the runner
-        if: always()
-        run: |
-          docker image ls --format '{{.Repository}}:{{.Tag}}' "$IMAGE" | xargs --no-run-if-empty docker image rm --force
-          docker logout ghcr.io

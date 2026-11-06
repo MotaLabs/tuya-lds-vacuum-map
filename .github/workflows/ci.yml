@@ -16,7 +16,7 @@ env:
 jobs:
   ruff:
     name: ruff, lint and format
-    runs-on: [self-hosted, motalabs]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
@@ -26,7 +26,7 @@ jobs:
 
   pytest:
     name: pytest, tests and branch coverage
-    runs-on: [self-hosted, motalabs]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
@@ -42,20 +42,16 @@ jobs:
 
   image:
     name: docker build, the image builds
-    runs-on: [self-hosted, motalabs]
+    runs-on: ubuntu-latest
     env:
-      DOCKER_BUILDKIT: "0"
       TAG: tuya-lds-vacuum-map:pr-${{ github.event.pull_request.number }}
     steps:
       - uses: actions/checkout@v7
       - run: docker build --pull --tag "$TAG" .
-      - name: Remove the image from the runner
-        if: always()
-        run: docker image rm --force "$TAG" || true
 
   conventional-commits:
     name: Conventional Commits, title and commits
-    runs-on: [self-hosted, motalabs]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:

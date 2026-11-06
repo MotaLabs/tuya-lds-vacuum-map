@@ -18,13 +18,13 @@ env:
 jobs:
   mutmut:
     name: mutmut, mutation report
-    runs-on: [self-hosted, motalabs]
+    runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync --frozen
-      - run: nice -n 10 uv run mutmut run --max-children 4
+      - run: uv run mutmut run --max-children 4
       - name: Write the report
         if: ${{ !cancelled() }}
         run: |

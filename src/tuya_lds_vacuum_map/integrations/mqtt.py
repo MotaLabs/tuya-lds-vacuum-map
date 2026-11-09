@@ -60,8 +60,32 @@ class Topics:
         return f"{self.base}/tap"
 
     @property
+    def auto_start(self) -> str:
+        return f"{self.base}/auto_start"
+
+    @property
+    def auto_start_set(self) -> str:
+        return f"{self.base}/auto_start/set"
+
+    @property
+    def start_delay(self) -> str:
+        return f"{self.base}/start_delay"
+
+    @property
+    def start_delay_set(self) -> str:
+        return f"{self.base}/start_delay/set"
+
+    @property
     def inbound(self) -> tuple[str, ...]:
-        return (self.tap, self.map_source_set, self.room_settings_set, self.room_color_set, self.room_color_random)
+        return (
+            self.tap,
+            self.map_source_set,
+            self.room_settings_set,
+            self.room_color_set,
+            self.room_color_random,
+            self.auto_start_set,
+            self.start_delay_set,
+        )
 
 
 @dataclass(frozen=True)
@@ -80,6 +104,7 @@ def discovery_configs(
     names: dict[str, str],
     source_options: list[str],
     room_options: list[str],
+    start_delay_range: tuple[float, float],
 ) -> dict[str, dict[str, Any]]:
     common = {"availability_topic": availability, "device": device}
     return {
@@ -123,6 +148,29 @@ def discovery_configs(
             "unique_id": f"{unique_prefix}_random_room_color",
             "command_topic": topics.room_color_random,
             "icon": "mdi:dice-multiple",
+        },
+        f"switch/{unique_prefix}_auto_start": {
+            **common,
+            "name": names["auto_start"],
+            "unique_id": f"{unique_prefix}_auto_start",
+            "state_topic": topics.auto_start,
+            "command_topic": topics.auto_start_set,
+            "entity_category": "config",
+            "icon": "mdi:timer-play-outline",
+        },
+        f"number/{unique_prefix}_start_delay": {
+            **common,
+            "name": names["start_delay"],
+            "unique_id": f"{unique_prefix}_start_delay",
+            "state_topic": topics.start_delay,
+            "command_topic": topics.start_delay_set,
+            "min": start_delay_range[0],
+            "max": start_delay_range[1],
+            "step": 1,
+            "mode": "box",
+            "unit_of_measurement": "s",
+            "device_class": "duration",
+            "entity_category": "config",
         },
     }
 

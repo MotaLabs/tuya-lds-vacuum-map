@@ -4,7 +4,15 @@ import pytest
 
 from support.maps import CODES, PROFILE, cell_center_mm, cloud_payload, rooms_message
 from support.waiting import eventually
-from tuya_lds_vacuum_map.gestures import DoubleTap, TapController, TapMode
+from tuya_lds_vacuum_map.gestures import (
+    START_DELAY_RANGE,
+    DoubleTap,
+    SpotPicker,
+    SpotPreview,
+    TapController,
+    TapMode,
+    start_delay,
+)
 from tuya_lds_vacuum_map.integrations.homeassistant import HomeAssistantError
 from tuya_lds_vacuum_map.lds.codec import decode_raw
 from tuya_lds_vacuum_map.map.coverage import Coverage
@@ -12,6 +20,8 @@ from tuya_lds_vacuum_map.map.model import MapModel
 from tuya_lds_vacuum_map.robot import Robot
 
 WINDOW = 0.05
+EXPIRY = 0.2
+DELAY = 0.05
 LEFT = cell_center_mm(10, 14)
 CATS = cell_center_mm(26, 7)
 
@@ -36,10 +46,16 @@ class Setup:
         self.map.compose(self.robot.rooms.rooms if self.robot.rooms else ())
         self.sender = sender or FakeSender()
         self.selected = []
-        self.taps = TapController(self.robot, self.map, self.sender, self.select, WINDOW, 1500)
+        self.changes = 0
+        self.delay: float | None = None
+        self.spots = SpotPicker(self.robot, self.sender, 1500, lambda: self.delay, EXPIRY, self.changed)
+        self.taps = TapController(self.robot, self.map, self.sender, self.select, WINDOW, self.spots)
 
     async def select(self, room) -> None:
         self.selected.append(room)
+
+    def changed(self) -> None:
+        self.changes += 1
 
     def targets(self) -> list[dict]:
         return [command["data"]["cmds"] for command in self.sender.sent]
@@ -88,15 +104,173 @@ async def test_tap_on_an_area_cleans_the_areas(setup):
     assert cmds[1]["data"] == {"cleanId": [-2], "extraAreas": [], "mapId": 42}
 
 
-async def test_spot_is_sent_at_once_and_shown(setup):
+async def test_a_spot_tap_shows_its_square_and_sends_nothing(setup):
     await setup.taps.tap(TapMode.ROOM, *LEFT)
     await setup.taps.tap(TapMode.SPOT, 0, 0)
+    assert setup.spots.preview == SpotPreview(42, (0, 0), 1500)
+    assert setup.spots.preview.square == ((-750, -750), (750, -750), (750, 750), (-750, 750))
+    await asyncio.sleep(WINDOW * 3)
+    assert setup.sender.sent == []
+    assert setup.robot.spot is None
+
+
+async def test_a_tap_inside_the_preview_cleans_the_previewed_spot(setup):
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    await setup.taps.tap(TapMode.SPOT, 750, -750)
     [cmds] = setup.targets()
     assert cmds[0]["data"]["mapId"] == 42
     assert cmds[0]["data"]["extraAreas"][0]["vertexs"] == [[-750, -750], [750, -750], [750, 750], [-750, 750]]
     assert setup.robot.spot == ((-750, -750), (750, -750), (750, 750), (-750, 750))
-    await asyncio.sleep(WINDOW * 3)
+    assert setup.spots.preview is None
+    assert setup.changes == 1
+    await asyncio.sleep(EXPIRY * 2)
     assert len(setup.sender.sent) == 1
+
+
+@pytest.mark.parametrize(("x", "y"), [(751, 0), (-751, 0), (0, 751), (0, -751)])
+async def test_a_tap_outside_the_preview_moves_it(setup, x, y):
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    await setup.taps.tap(TapMode.SPOT, x, y)
+    assert setup.spots.preview.center == (x, y)
+    assert setup.sender.sent == []
+
+
+async def test_an_unconfirmed_preview_goes_away(setup):
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    await asyncio.sleep(EXPIRY / 2)
+    assert setup.spots.preview
+    await eventually(lambda: setup.spots.preview is None)
+    assert setup.changes == 1
+    assert setup.sender.sent == []
+
+
+async def test_moving_the_preview_restarts_its_time(setup):
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    await asyncio.sleep(EXPIRY * 0.7)
+    await setup.taps.tap(TapMode.SPOT, 5000, 0)
+    await asyncio.sleep(EXPIRY * 0.7)
+    assert setup.spots.preview.center == (5000, 0)
+
+
+async def test_a_room_command_takes_the_preview_away(setup):
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    await setup.taps.tap(TapMode.ROOM, *LEFT)
+    assert setup.spots.preview
+    await eventually(lambda: setup.sender.sent)
+    assert setup.spots.preview is None
+    assert setup.changes == 1
+    [cmds] = setup.targets()
+    assert cmds[0]["data"]["segmentId"] == [1]
+
+
+async def test_a_double_tap_keeps_the_preview(setup):
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    await setup.taps.tap(TapMode.ROOM, *LEFT)
+    await setup.taps.tap(TapMode.ROOM, *LEFT)
+    await asyncio.sleep(WINDOW * 2)
+    assert setup.spots.preview
+    assert setup.changes == 0
+
+
+async def test_a_preview_starts_by_itself_after_the_delay(setup):
+    setup.delay = DELAY
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    await asyncio.sleep(DELAY / 2)
+    assert setup.sender.sent == []
+    await eventually(lambda: setup.sender.sent)
+    [cmds] = setup.targets()
+    assert cmds[0]["data"]["extraAreas"][0]["vertexs"] == [[-750, -750], [750, -750], [750, 750], [-750, 750]]
+    assert setup.robot.spot == ((-750, -750), (750, -750), (750, 750), (-750, 750))
+    assert setup.spots.preview is None
+    assert setup.changes == 1
+
+
+async def test_moving_the_preview_restarts_the_delay(setup):
+    setup.delay = DELAY
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    await asyncio.sleep(DELAY * 0.7)
+    await setup.taps.tap(TapMode.SPOT, 5000, 0)
+    await asyncio.sleep(DELAY * 0.7)
+    assert setup.sender.sent == []
+    await eventually(lambda: setup.sender.sent)
+    [cmds] = setup.targets()
+    assert cmds[0]["data"]["extraAreas"][0]["vertexs"][0] == [4250, -750]
+
+
+async def test_turning_the_automatic_start_off_keeps_the_preview(setup):
+    setup.delay = DELAY
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    setup.delay = None
+    setup.spots.reschedule()
+    await asyncio.sleep(DELAY * 2)
+    assert setup.sender.sent == []
+    assert setup.spots.preview
+    await eventually(lambda: setup.spots.preview is None)
+    assert setup.sender.sent == []
+
+
+async def test_turning_the_automatic_start_on_starts_the_preview(setup):
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    setup.delay = DELAY
+    setup.spots.reschedule()
+    await eventually(lambda: setup.sender.sent)
+
+
+async def test_rescheduling_without_a_preview_does_nothing(setup):
+    setup.delay = DELAY
+    setup.spots.reschedule()
+    await asyncio.sleep(DELAY * 2)
+    assert setup.sender.sent == []
+    assert setup.changes == 0
+
+
+async def test_a_spot_that_fails_to_start_by_itself_is_logged(caplog):
+    setup = Setup(rooms_message(), cloud_payload(), FakeSender(TimeoutError()))
+    setup.delay = DELAY
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    await eventually(lambda: "cleaning command failed: TimeoutError" in caplog.text)
+    assert setup.spots.preview is None
+    assert setup.robot.spot is None
+
+
+@pytest.mark.parametrize(("value", "seconds"), [("10", 10.0), ("1", 1.0), ("300.0", 300.0), (2.5, 2.5), (60, 60.0)])
+def test_start_delay(value, seconds):
+    assert start_delay(value) == seconds
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("0.99", "out of range"),
+        ("300.5", "out of range"),
+        ("nan", "out of range"),
+        ("inf", "out of range"),
+        ("-inf", "out of range"),
+        ("ten", "could not convert"),
+        ("", "could not convert"),
+        (True, "not a number"),
+        (None, "not a number"),
+        ([], "not a number"),
+        (10**400, "not a finite number"),
+    ],
+)
+def test_a_start_delay_that_is_not_a_number_in_range_is_refused(value, message):
+    with pytest.raises(ValueError, match=message):
+        start_delay(value)
+
+
+def test_the_start_delay_range():
+    assert START_DELAY_RANGE == (1.0, 300.0)
+
+
+async def test_a_spot_that_fails_to_start_is_logged(caplog):
+    setup = Setup(rooms_message(), cloud_payload(), FakeSender(HomeAssistantError("offline")))
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    assert "cleaning command failed: offline" in caplog.text
+    assert setup.spots.preview is None
+    assert setup.robot.spot is None
+    assert setup.changes == 1
 
 
 async def test_tap_outside_rooms_does_nothing(setup):

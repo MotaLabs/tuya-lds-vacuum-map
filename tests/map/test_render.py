@@ -118,6 +118,40 @@ def test_the_spot_border_grows_with_the_map_scale(payload):
         assert sum(1 for pixel in column if pixel == STYLE.spot[:3]) >= scale
 
 
+def test_a_spot_preview_is_tinted_apart_from_a_running_spot(payload):
+    grid = GridMap.from_cloud(payload)
+    square = tuple(tuple(vertex) for vertex in commands.spot_square(*cell_center_mm(30, 14), 500))
+    plain = render(Scene(grid, rooms=UNNAMED, room_colors=COLORS)).getpixel(pixel_of_cell(31, 15))
+    running = render(Scene(grid, rooms=UNNAMED, room_colors=COLORS, spot=square)).getpixel(pixel_of_cell(31, 15))
+    preview = render(Scene(grid, rooms=UNNAMED, room_colors=COLORS, preview_square=square)).getpixel(
+        pixel_of_cell(31, 15)
+    )
+    assert preview[2] > plain[2]
+    assert preview[0] < plain[0] + 5
+    assert running[0] > preview[0]
+
+
+def test_a_spot_preview_marks_the_tapped_point(payload):
+    grid = GridMap.from_cloud(payload)
+    center = cell_center_mm(30, 14)
+    x, y = to_map(calibration(grid, SCALE), *center)
+    image = render(Scene(grid, rooms=UNNAMED, room_colors=COLORS, preview_center=center))
+    radius = 2 * SCALE
+    assert image.getpixel((x, y)) == STYLE.preview[:3]
+    assert image.getpixel((x + radius - 1, y)) == STYLE.preview[:3]
+    assert min(image.getpixel((x + radius + 1, y))) > 200
+    assert image.getpixel((x + radius + 4, y)) == COLORS[2]
+
+
+def test_the_preview_border_shows_on_a_room_of_its_color(payload):
+    grid = GridMap.from_cloud(payload)
+    square = tuple(tuple(vertex) for vertex in commands.spot_square(*cell_center_mm(10, 14), 500))
+    image = render(Scene(grid, rooms=UNNAMED, room_colors={1: STYLE.preview[:3], 2: COLORS[2]}, preview_square=square))
+    row = pixel_of_cell(10, 14)[1]
+    assert any(min(image.getpixel((x, row))) > 200 for x in range(3 * SCALE, 20 * SCALE))
+    assert any(image.getpixel((x, row)) == STYLE.preview[:3] for x in range(3 * SCALE, 20 * SCALE))
+
+
 def test_an_area_under_the_spot_keeps_its_border(payload):
     grid = GridMap.from_cloud(payload)
     area = Area(1, "area", "normal", "", ((-750, 50), (-250, 50), (-250, 550), (-750, 550)))

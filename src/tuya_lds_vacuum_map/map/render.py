@@ -32,6 +32,7 @@ class Style:
     background: Color = (245, 245, 245, 255)
     forbidden: Color = (230, 30, 30, 255)
     spot: Color = (230, 30, 30, 255)
+    preview: Color = (20, 120, 220, 255)
     path: Color = (255, 255, 255, 220)
     dock: Color = (130, 90, 230, 255)
     fan: Color = (255, 200, 60, 255)
@@ -47,6 +48,8 @@ class Scene:
     robot: Point | None = None
     dock: Point | None = None
     spot: tuple[Point, ...] | None = None
+    preview_square: tuple[Point, ...] | None = None
+    preview_center: Point | None = None
     show_settings: bool = False
     fan_labels: dict[str, str] = field(default_factory=dict)
     water_labels: dict[int, str] = field(default_factory=dict)
@@ -136,12 +139,16 @@ class _Painter:
         for area in scene.areas:
             self.area(area)
         if scene.spot and len(scene.spot) >= 3:
-            self.spot([self.at(v) for v in scene.spot])
+            self.square([self.at(v) for v in scene.spot], self.style.spot)
+        if scene.preview_square and len(scene.preview_square) >= 3:
+            self.square([self.at(v) for v in scene.preview_square], self.style.preview)
         if len(scene.path) > 1:
             self.draw.line([self.at(p) for p in scene.path], fill=self.style.path, width=2, joint="curve")
         for room in scene.rooms:
             if room.pos and room.name:
                 self.room_label(room, scene)
+        if scene.preview_center:
+            self.target(self.at(scene.preview_center))
         if scene.dock:
             self.dock(self.at(scene.dock))
         if scene.robot:
@@ -221,14 +228,23 @@ class _Painter:
         )
         self.draw.ellipse((x - 4, y - 4, x + 4, y + 4), fill=(60, 60, 60, 255))
 
-    def spot(self, points: list[tuple[float, float]]) -> None:
+    def square(self, points: list[tuple[float, float]], color: Color) -> None:
         overlay = Image.new("RGBA", self.layer.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
-        draw.polygon(points, fill=(*self.style.spot[:3], 40))
+        draw.polygon(points, fill=(*color[:3], 40))
         self.layer.alpha_composite(overlay)
-        width = max(2, self.style.scale)
+        width = self.line_width()
         self.draw.line([*points, points[0]], fill=(255, 255, 255, 230), width=width + 2, joint="curve")
-        self.dashed(points, self.style.spot, width)
+        self.dashed(points, color, width)
+
+    def target(self, center: tuple[float, float]) -> None:
+        x, y = center
+        radius = 2 * self.line_width()
+        self.draw.ellipse((x - radius - 2, y - radius - 2, x + radius + 2, y + radius + 2), fill=(255, 255, 255, 230))
+        self.draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=self.style.preview)
+
+    def line_width(self) -> int:
+        return max(2, self.style.scale)
 
     def dashed(self, points: list[tuple[float, float]], color: Color, width: int = 2, step: float = 8) -> None:
         for (x1, y1), (x2, y2) in zip(points, points[1:] + points[:1], strict=True):

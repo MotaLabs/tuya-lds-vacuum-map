@@ -6,6 +6,8 @@ room_settings = "Room settings"
 room_color = "Room color"
 random_room_color = "Random room color"
 no_room = "None"
+auto_start = "Automatic start"
+start_delay = "Start delay"
 
 [levels]
 quiet = "Quiet"

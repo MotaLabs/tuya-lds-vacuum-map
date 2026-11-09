@@ -22,6 +22,8 @@ class Snapshot:
     selected_room: str | None = None
     coverage: list[int] = field(default_factory=list)
     room_colors: dict[str, str] = field(default_factory=dict)
+    auto_start: bool = True
+    start_delay: float = 10.0
 
 
 class Storage:

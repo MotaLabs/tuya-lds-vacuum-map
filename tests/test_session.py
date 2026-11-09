@@ -11,7 +11,7 @@ from hypothesis import example, given
 from hypothesis import strategies as st
 
 from support.fakes import FakeCloudSync
-from support.harness import DEVICE, Harness
+from support.harness import DEVICE, TIMING, Harness
 from support.maps import PROFILE, cell_center_mm, cloud_payload, rooms_message
 from support.strategies import json_scalars, json_values, path_chunks, room_lists, spot_commands
 from support.waiting import eventually, stop
@@ -84,9 +84,62 @@ async def test_map_source_and_room_selects(harness):
 async def test_spot_tap_reaches_localtuya(harness):
     harness.session().on_cloud_payload(cloud_payload())
     await harness.tap(1500, -4750, "spot")
+    scene = harness.session().scene()
+    assert scene.preview_center == (1500, -4750)
+    assert scene.preview_square == ((750, -5500), (2250, -5500), (2250, -4000), (750, -4000))
+    assert harness.services == []
+    await harness.tap(1500, -4750, "spot")
+    assert harness.session().scene().preview_square is None
     [(domain, service, data)] = harness.services
     assert (domain, service, data["device_id"], data["dp"]) == ("localtuya", "set_dp", DEVICE, DPS.raw)
     assert decode_raw(data["value"])["data"]["cmds"][0]["data"]["extraAreas"][0]["mode"] == "point"
+
+
+async def test_a_preview_that_goes_away_redraws_the_map(tmp_path):
+    harness = Harness(tmp_path, timing=dataclasses.replace(TIMING, spot_preview=0.05))
+    harness.session().on_cloud_payload(cloud_payload())
+    await harness.message(harness.session().topics.auto_start_set, "OFF")
+    await harness.tap(1500, -4750, "spot")
+    harness.session().dirty.clear()
+    await eventually(lambda: harness.session().dirty.is_set())
+    assert harness.session().scene().preview_square is None
+
+
+async def test_the_automatic_start_is_set_from_home_assistant(harness):
+    session = harness.session()
+    assert (session.snapshot.auto_start, session.snapshot.start_delay) == (True, 10.0)
+    assert session.auto_start_delay() == 10.0
+    await harness.message(session.topics.start_delay_set, "30")
+    assert session.auto_start_delay() == 30.0
+    assert harness.client.last(session.topics.start_delay) == "30"
+    assert session.unsaved
+    await harness.message(session.topics.auto_start_set, "OFF")
+    assert session.auto_start_delay() is None
+    assert harness.client.last(session.topics.auto_start) == "OFF"
+    await harness.message(session.topics.auto_start_set, "ON")
+    assert harness.client.last(session.topics.auto_start) == "ON"
+    assert session.auto_start_delay() == 30.0
+
+
+async def test_a_bad_automatic_start_setting_changes_nothing(harness, caplog):
+    session = harness.session()
+    await harness.message(session.topics.start_delay_set, "0")
+    await harness.message(session.topics.auto_start_set, "on")
+    assert (session.snapshot.auto_start, session.snapshot.start_delay) == (True, 10.0)
+    assert not session.unsaved
+    assert "start delay out of range" in caplog.text
+
+
+async def test_turning_the_automatic_start_on_starts_a_waiting_preview(tmp_path):
+    harness = Harness(tmp_path)
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    await harness.message(session.topics.auto_start_set, "OFF")
+    await harness.tap(1500, -4750, "spot")
+    session.snapshot.start_delay = 0.01
+    await harness.message(session.topics.auto_start_set, "ON")
+    await eventually(lambda: harness.services)
+    assert session.spots.preview is None
 
 
 async def test_a_tap_without_a_mode_cleans_the_room(harness):
@@ -231,8 +284,11 @@ async def test_state_survives_a_restart(tmp_path):
     await first.message(first.session().topics.map_source_set, "Local only")
     await first.dp(DPS.room_mode, True)
     await first.message(first.session().topics.room_settings_set, "Right")
+    await first.message(first.session().topics.auto_start_set, "OFF")
+    await first.message(first.session().topics.start_delay_set, "45")
     first.session().save()
     second = Harness(tmp_path).session()
+    assert (second.snapshot.auto_start, second.snapshot.start_delay) == (False, 45.0)
     assert second.robot.rooms.names == ["Left", "Right"]
     assert (second.robot.room_mode, second.snapshot.selected_room) == (True, "Right")
     assert (second.robot.state, second.snapshot.source, second.map.map_id) == ("totaling", MapSource.LOCAL, 42)
@@ -327,6 +383,21 @@ async def test_colors_survive_a_restart(tmp_path):
     assert second.room_colors[2] == (0x12, 0x34, 0x56)
 
 
+@pytest.mark.parametrize(("auto_start", "delay"), [("yes", 0), (1, "soon"), (None, 10**400)])
+def test_unreadable_saved_start_settings_are_replaced(tmp_path, caplog, auto_start, delay):
+    Storage(tmp_path / DEVICE / "state.json").save(Snapshot(auto_start=auto_start, start_delay=delay))
+    session = Harness(tmp_path).session()
+    assert (session.snapshot.auto_start, session.snapshot.start_delay) == (True, 10.0)
+    assert "ignoring saved automatic start" in caplog.text
+    assert "ignoring saved start delay" in caplog.text
+
+
+def test_saved_start_settings_in_range_are_kept(tmp_path):
+    Storage(tmp_path / DEVICE / "state.json").save(Snapshot(auto_start=False, start_delay=300))
+    session = Harness(tmp_path).session()
+    assert (session.snapshot.auto_start, session.snapshot.start_delay) == (False, 300.0)
+
+
 def test_unreadable_saved_colors_are_replaced(tmp_path, caplog):
     Storage(tmp_path / DEVICE / "state.json").save(
         Snapshot(room_message=rooms_message(), room_colors={"1": "blue", "2": "#123456"})
@@ -401,7 +472,15 @@ def hue(color: tuple[int, int, int]) -> float:
     return colorsys.rgb_to_hls(*(channel / 255 for channel in color))[0]
 
 
-TOPIC_KINDS = ("tap", "map_source_set", "room_settings_set", "room_color_set", "room_color_random")
+TOPIC_KINDS = (
+    "tap",
+    "map_source_set",
+    "room_settings_set",
+    "room_color_set",
+    "room_color_random",
+    "auto_start_set",
+    "start_delay_set",
+)
 taps = st.fixed_dictionaries({"x": json_scalars, "y": json_scalars}, optional={"mode": json_scalars})
 
 

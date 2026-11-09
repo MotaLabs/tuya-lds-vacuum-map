@@ -22,6 +22,8 @@ class Texts:
     room_color: str
     random_room_color: str
     no_room: str
+    auto_start: str
+    start_delay: str
     levels: dict[str, str]
     states: dict[str, str]
 

@@ -29,6 +29,7 @@ TIMING: dict[str, tuple[str, Parser]] = {
     "cloud_refresh_idle": ("CLOUD_IDLE_REFRESH_SECONDS", float),
     "cloud_after_cleaning": ("CLOUD_AFTER_CLEANING_SECONDS", float),
     "double_tap": ("DOUBLE_TAP_SECONDS", float),
+    "spot_preview": ("SPOT_PREVIEW_SECONDS", float),
     "render_interval": ("RENDER_INTERVAL_SECONDS", float),
     "save_interval": ("SAVE_INTERVAL_SECONDS", float),
 }
@@ -46,6 +47,7 @@ class Timing:
     cloud_refresh_idle: float = 6 * 3600
     cloud_after_cleaning: float = 20
     double_tap: float = 0.6
+    spot_preview: float = 120
     render_interval: float = 1.5
     save_interval: float = 30
 

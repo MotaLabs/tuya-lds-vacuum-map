@@ -39,7 +39,10 @@ def test_topics():
         "maps/dev/room_settings/set",
         "maps/dev/room_color/set",
         "maps/dev/room_color/random",
+        "maps/dev/auto_start/set",
+        "maps/dev/start_delay/set",
     )
+    assert (TOPICS.auto_start, TOPICS.start_delay) == ("maps/dev/auto_start", "maps/dev/start_delay")
 
 
 def test_discovery_configs():
@@ -54,17 +57,35 @@ def test_discovery_configs():
             "room_settings": "Room",
             "room_color": "Color",
             "random_room_color": "Dice",
+            "auto_start": "Auto start",
+            "start_delay": "Delay",
         },
         ["Auto", "Local"],
         ["None", "Left"],
+        (1.0, 300.0),
     )
     assert sorted(configs) == [
         "button/tlvm_dev_random_room_color",
         "camera/tlvm_dev_map",
+        "number/tlvm_dev_start_delay",
         "select/tlvm_dev_map_source",
         "select/tlvm_dev_room_settings",
+        "switch/tlvm_dev_auto_start",
         "text/tlvm_dev_room_color",
     ]
+    switch = configs["switch/tlvm_dev_auto_start"]
+    assert (switch["name"], switch["state_topic"], switch["command_topic"]) == (
+        "Auto start",
+        TOPICS.auto_start,
+        TOPICS.auto_start_set,
+    )
+    delay = configs["number/tlvm_dev_start_delay"]
+    assert (delay["name"], delay["state_topic"], delay["command_topic"]) == (
+        "Delay",
+        TOPICS.start_delay,
+        TOPICS.start_delay_set,
+    )
+    assert (delay["min"], delay["max"], delay["step"], delay["unit_of_measurement"]) == (1.0, 300.0, 1, "s")
     color = configs["text/tlvm_dev_room_color"]
     assert (color["state_topic"], color["command_topic"]) == (TOPICS.room_color, TOPICS.room_color_set)
     assert re.match(color["pattern"], "#a0B1c2")

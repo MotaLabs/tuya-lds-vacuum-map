@@ -14,6 +14,8 @@ from .robot import Robot
 
 log = logging.getLogger(__name__)
 
+START_DELAY_RANGE = (1.0, 300.0)
+
 
 class TapMode(StrEnum):
     ROOM = "room"
@@ -22,6 +24,19 @@ class TapMode(StrEnum):
 
 class Sender(Protocol):
     async def send_raw(self, value: str) -> None: ...
+
+
+def start_delay(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        raise ValueError(f"not a number: {value!r}")
+    try:
+        seconds = float(value)
+    except OverflowError as error:
+        raise ValueError(f"not a finite number: {value!r}") from error
+    low, high = START_DELAY_RANGE
+    if not low <= seconds <= high:
+        raise ValueError(f"start delay out of range: {value!r}")
+    return seconds
 
 
 async def send_or_log(sender: Sender, command: str) -> bool:
@@ -50,11 +65,18 @@ class SpotPreview:
 
 class SpotPicker:
     def __init__(
-        self, robot: Robot, sender: Sender, size_mm: int, expiry_seconds: float, on_change: Callable[[], None]
+        self,
+        robot: Robot,
+        sender: Sender,
+        size_mm: int,
+        auto_start: Callable[[], float | None],
+        expiry_seconds: float,
+        on_change: Callable[[], None],
     ) -> None:
         self.robot = robot
         self.sender = sender
         self.size_mm = size_mm
+        self.auto_start = auto_start
         self.expiry = expiry_seconds
         self.on_change = on_change
         self.preview: SpotPreview | None = None
@@ -65,8 +87,14 @@ class SpotPicker:
             await self._start(self.preview)
             return
         self.preview = SpotPreview(map_id, (x, y), self.size_mm)
+        self.reschedule()
+
+    def reschedule(self) -> None:
         self._cancel_timer()
-        self._timer = asyncio.create_task(self._expire())
+        if self.preview is None:
+            return
+        delay = self.auto_start()
+        self._timer = asyncio.create_task(self._expire() if delay is None else self._start_after(self.preview, delay))
 
     def clear(self) -> None:
         self._cancel_timer()
@@ -80,6 +108,11 @@ class SpotPicker:
         if await send_or_log(self.sender, commands.clean_spot(preview.map_id, *preview.center, preview.size_mm)):
             self.robot.spot = preview.square
         self.on_change()
+
+    async def _start_after(self, preview: SpotPreview, delay: float) -> None:
+        await asyncio.sleep(delay)
+        self._timer = None
+        await self._start(preview)
 
     async def _expire(self) -> None:
         await asyncio.sleep(self.expiry)

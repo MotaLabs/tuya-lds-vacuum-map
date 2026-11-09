@@ -6,6 +6,8 @@ room_settings = "Ajustes do cômodo"
 room_color = "Cor do cômodo"
 random_room_color = "Sortear cor do cômodo"
 no_room = "Nenhum"
+auto_start = "Início automático"
+start_delay = "Espera para iniciar"
 
 [levels]
 quiet = "Eco"

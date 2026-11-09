@@ -7,7 +7,7 @@ from typing import Any
 
 from .cloud_sync import CloudMapSync
 from .config import RobotSettings, Settings
-from .gestures import SpotPicker, TapController, TapMode
+from .gestures import START_DELAY_RANGE, SpotPicker, TapController, TapMode, start_delay
 from .i18n import Texts
 from .integrations.homeassistant import HomeAssistant, HomeAssistantError
 from .integrations.localtuya import LocalTuyaLink
@@ -25,6 +25,7 @@ from .storage import MapSource, Snapshot, Storage
 log = logging.getLogger(__name__)
 
 ROOM_SETTINGS_EVENT = "tuya_lds_vacuum_map_room_settings"
+SWITCH = {"ON": True, "OFF": False}
 
 
 class RobotSession:
@@ -49,6 +50,7 @@ class RobotSession:
         self.topics = Topics(settings.robot_topic(config.device_id))
         self.storage = Storage(Path(settings.data_dir) / config.device_id / "state.json")
         self.snapshot = self.storage.load()
+        _check_start_settings(self.snapshot)
         geometry = profile.geometry
         coverage = Coverage(profile.cells, geometry.coverage_cell_mm, geometry.cleaning_radius_mm)
         self.map = MapModel(coverage, self.snapshot.cloud_map)
@@ -57,7 +59,9 @@ class RobotSession:
         self.renderer = Renderer(profile.cells, Style(scale=settings.map_scale, font_path=settings.font_path))
         self.dirty = asyncio.Event()
         link = LocalTuyaLink(ha, config.device_id, profile.data_points.raw)
-        self.spots = SpotPicker(self.robot, link, geometry.spot_size_mm, settings.timing.spot_preview, self.dirty.set)
+        self.spots = SpotPicker(
+            self.robot, link, geometry.spot_size_mm, self.auto_start_delay, settings.timing.spot_preview, self.dirty.set
+        )
         self.taps = TapController(
             self.robot, self.map, link, self.open_room_settings, settings.timing.double_tap, self.spots
         )
@@ -144,8 +148,22 @@ class RobotSession:
                 await self.recolor_selected_room(payload)
             elif topic == topics.room_color_random:
                 await self.recolor_selected_room(None)
+            elif topic == topics.auto_start_set:
+                self.snapshot.auto_start = SWITCH[payload]
+                await self.start_settings_changed()
+            elif topic == topics.start_delay_set:
+                self.snapshot.start_delay = start_delay(payload)
+                await self.start_settings_changed()
         except (ValueError, KeyError, TypeError, HomeAssistantError) as error:
             log.warning("%s: could not handle %s: %s", self.label, topic, error)
+
+    def auto_start_delay(self) -> float | None:
+        return self.snapshot.start_delay if self.snapshot.auto_start else None
+
+    async def start_settings_changed(self) -> None:
+        self.unsaved = True
+        self.spots.reschedule()
+        await self.publish_states()
 
     def color_new_rooms(self) -> None:
         for room in self.robot.rooms.rooms if self.robot.rooms else ():
@@ -197,9 +215,12 @@ class RobotSession:
                 "room_settings": texts.room_settings,
                 "room_color": texts.room_color,
                 "random_room_color": texts.random_room_color,
+                "auto_start": texts.auto_start,
+                "start_delay": texts.start_delay,
             },
             [texts.source_auto, texts.source_local],
             [texts.no_room, *(self.robot.rooms.names if self.robot.rooms else [])],
+            START_DELAY_RANGE,
         )
         await self.mqtt.publish_discovery(configs)
 
@@ -211,6 +232,8 @@ class RobotSession:
         room = self.selected_room()
         color = self.room_colors.get(room.id) if room else None
         await self.mqtt.publish(topics.room_color, format_color(color) if color else "")
+        await self.mqtt.publish(topics.auto_start, "ON" if self.snapshot.auto_start else "OFF")
+        await self.mqtt.publish(topics.start_delay, f"{self.snapshot.start_delay:g}")
 
     def scene(self) -> Scene | None:
         rooms = self.robot.rooms
@@ -282,6 +305,8 @@ class RobotSession:
                     selected_room=self.snapshot.selected_room,
                     coverage=self.map.coverage.to_list(),
                     room_colors={str(room_id): format_color(color) for room_id, color in self.room_colors.items()},
+                    auto_start=self.snapshot.auto_start,
+                    start_delay=self.snapshot.start_delay,
                 )
             )
         except Exception as error:
@@ -294,6 +319,18 @@ class RobotSession:
             )
             return
         self.unsaved = False
+
+
+def _check_start_settings(snapshot: Snapshot) -> None:
+    defaults = Snapshot()
+    if not isinstance(snapshot.auto_start, bool):
+        log.warning("ignoring saved automatic start %r", snapshot.auto_start)
+        snapshot.auto_start = defaults.auto_start
+    try:
+        snapshot.start_delay = start_delay(snapshot.start_delay)
+    except ValueError:
+        log.warning("ignoring saved start delay %r", snapshot.start_delay)
+        snapshot.start_delay = defaults.start_delay
 
 
 def _load_colors(saved: dict[str, str]) -> dict[int, Color]:

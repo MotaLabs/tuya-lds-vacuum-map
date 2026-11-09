@@ -157,7 +157,7 @@ connection, the MQTT connection and the cloud project are shared.
 | `TUYA_DEVICE_ID` | one robot | | The robot's Tuya device id, as in LocalTuya |
 | `ROBOTS_FILE` | several robots | | Path to the [robots file](#several-robots) |
 | `HA_URL` | yes | | Home Assistant URL |
-| `HA_TOKEN` | yes | | Long-lived access token |
+| `HA_TOKEN` | yes | | Long-lived access token of an admin user |
 | `MQTT_HOST` | yes | | MQTT broker host |
 | `MQTT_PORT` | | `1883` | |
 | `MQTT_USERNAME`, `MQTT_PASSWORD` | | | |

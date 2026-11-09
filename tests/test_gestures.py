@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 
+from support.fakes import ClosedSocket
 from support.maps import CODES, PROFILE, cell_center_mm, cloud_payload, rooms_message
 from support.waiting import eventually
 from tuya_lds_vacuum_map.gestures import (
@@ -13,7 +14,8 @@ from tuya_lds_vacuum_map.gestures import (
     TapMode,
     start_delay,
 )
-from tuya_lds_vacuum_map.integrations.homeassistant import HomeAssistantError
+from tuya_lds_vacuum_map.integrations.homeassistant import HomeAssistant, HomeAssistantError
+from tuya_lds_vacuum_map.integrations.localtuya import LocalTuyaLink
 from tuya_lds_vacuum_map.lds.codec import decode_raw
 from tuya_lds_vacuum_map.map.coverage import Coverage
 from tuya_lds_vacuum_map.map.model import MapModel
@@ -222,6 +224,18 @@ async def test_rescheduling_without_a_preview_does_nothing(setup):
     await asyncio.sleep(DELAY * 2)
     assert setup.sender.sent == []
     assert setup.changes == 0
+
+
+async def test_a_spot_lost_to_a_closed_connection_is_logged(caplog):
+    ha = HomeAssistant("http://127.0.0.1:1", "token")
+    ha._ws = ClosedSocket()
+    ha.connected.set()
+    setup = Setup(rooms_message(), cloud_payload(), LocalTuyaLink(ha, "dev", 127))
+    setup.delay = DELAY
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    await eventually(lambda: "cleaning command failed: websocket closed" in caplog.text)
+    assert setup.changes == 1
+    assert setup.robot.spot is None
 
 
 async def test_a_spot_that_fails_to_start_by_itself_is_logged(caplog):

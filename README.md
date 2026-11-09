@@ -25,7 +25,7 @@ the map into cleaning commands sent over the local network.
 | Done | Tap a room to clean it | Local command, no cloud |
 | Done | Tap an area to clean it | Uses the areas as they are on the robot |
 | Done | Double tap a room to open its settings | Selects the room on a Home Assistant select and fires an event |
-| Done | Spot cleaning | Tap a point, and the robot cleans the 1.5 m square around it, drawn on the map with its path while it works |
+| Done | Spot cleaning | A tap shows the 1.5 m square around the point; a tap inside it, or the automatic start after a delay, sends the robot, and the square stays on the map with its path while it works. The preview and the automatic start have not been tried on a robot yet |
 | Done | Map source switch | `Automatic` (cloud while it answers, local otherwise) or `Local only`, from Home Assistant |
 | Done | English and Brazilian Portuguese | Entity names and map labels |
 | Done | Several robots in one instance | Each robot gets its own device, map, topics and saved state; so far only one robot has run it |
@@ -171,6 +171,7 @@ connection, the MQTT connection and the cloud project are shared.
 | `CLOUD_IDLE_REFRESH_SECONDS` | | `21600` | How often the cloud map is fetched while the robot is still |
 | `CLOUD_AFTER_CLEANING_SECONDS` | | `20` | Wait after a cleaning ends before fetching the final map |
 | `DOUBLE_TAP_SECONDS` | | `0.6` | Window for a double tap; a single tap waits this long before cleaning |
+| `SPOT_PREVIEW_SECONDS` | | `120` | With the automatic start off, how long a spot preview waits for a tap inside it |
 | `RENDER_INTERVAL_SECONDS` | | `1.5` | Shortest time between two map images |
 | `SAVE_INTERVAL_SECONDS` | | `30` | How often the state in `DATA_DIR` is written |
 | `FONT_PATH` | | DejaVu Sans | TrueType font for the labels |
@@ -211,6 +212,8 @@ The service creates, through MQTT discovery:
 | `select.<device>_room_settings` | The room picked by a double tap, or `None` |
 | `text.<device>_room_color` | The picked room's color as `#rrggbb`; write a new one to change it |
 | `button.<device>_random_room_color` | Gives the picked room a new random color |
+| `switch.<device>_automatic_start` | On: a spot preview starts by itself after the start delay. Off: only a tap inside it starts it |
+| `number.<device>_start_delay` | Seconds with no tap before a spot preview starts by itself, from 1 to 300 |
 
 A double tap also fires the `tuya_lds_vacuum_map_room_settings` event with `device_id`, `room_id` and
 `room_name`, for automations.
@@ -239,12 +242,18 @@ map_modes:
     icon: mdi:map-marker-radius
     selection_type: MANUAL_POINT
     coordinates_rounding: true
+    run_immediately: true
     service_call_schema:
       service: mqtt.publish
       service_data:
         topic: tuya_lds_vacuum_map/<device-id>/tap
         payload: '{"mode": "spot", "x": [[point_x]], "y": [[point_y]]}'
 ```
+
+In the spot mode every tap reaches the service at once. The first one draws the square the robot would clean
+and the point at its center; a tap inside the square starts the clean, a tap outside moves it. With the
+automatic start on, the robot also leaves by itself once no tap came for the start delay. The square shows
+after the round trip from the card to the service and back, about 1 to 3 s.
 
 To show a room's settings below the map after a double tap, use a `conditional` card on
 `select.<device>_room_settings` for each room. The room color entities act on the same picked room, so they

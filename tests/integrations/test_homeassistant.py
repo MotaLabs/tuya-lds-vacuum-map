@@ -151,6 +151,28 @@ async def test_an_accepted_subscription_resets_the_wait(monkeypatch):
     assert sleeps.delays[:4] == [1, 1, 1, 1]
 
 
+async def test_a_connection_without_subscriptions_resets_the_wait(monkeypatch):
+    sleeps = RecordedSleeps()
+    monkeypatch.setattr(homeassistant, "asyncio", sleeps)
+
+    async def server(ws) -> None:
+        await ws.send(json.dumps({"type": "auth_required"}))
+        await ws.recv()
+        await ws.send(json.dumps({"type": "auth_ok"}))
+        await ws.close(1001)
+
+    async def on_event(event_type: str, data: dict) -> None:
+        raise AssertionError(event_type)
+
+    async with serve(server, "127.0.0.1", 0) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
+        task = asyncio.create_task(ha.run([], on_event))
+        await eventually(lambda: len(sleeps.delays) >= 4)
+        await stop(task)
+    assert sleeps.delays[:4] == [1, 1, 1, 1]
+
+
 async def test_the_connection_counts_once_every_subscription_is_accepted():
     answer = asyncio.Event()
 
@@ -181,7 +203,8 @@ async def test_the_connection_counts_once_every_subscription_is_accepted():
         await stop(task)
 
 
-async def test_a_subscription_left_unanswered_leaves_no_unread_reply(caplog):
+async def test_a_subscription_left_unanswered_leaves_no_unread_reply(monkeypatch, caplog):
+    monkeypatch.setattr(homeassistant, "asyncio", RecordedSleeps())
     gc.collect()
     caplog.clear()
     connections = []

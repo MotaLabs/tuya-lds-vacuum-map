@@ -1,5 +1,6 @@
 import re
 import tempfile
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -287,7 +288,9 @@ def well_typed(profile: Profile) -> bool:
 def test_any_profile_is_read_or_refused(override):
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / "robot.toml"
-        path.write_text(toml_document({"extends": "lds-robot", **override}), encoding="utf-8")
+        document = toml_document({"extends": "lds-robot", **override})
+        tomllib.loads(document)
+        path.write_text(document, encoding="utf-8")
         try:
             profile = load_profile(str(path))
         except ProfileError:

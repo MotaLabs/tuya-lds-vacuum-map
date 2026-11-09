@@ -11,6 +11,11 @@ confirmed (see [Adding a robot](../CONTRIBUTING.md#adding-a-robot)).
 | DP | Code | Type | Use here |
 |---|---|---|---|
 | 105 | `robot_state` | enum | Robot state: `idle`, `pointing`, `areaing`, `totaling`, `sweep`, `mop`, `fault`, `pause`, `chargring`, `tocharge`, `fullcharge`, `remotectl`, `dormant`, `curpointing`, `selectroom`, `dustcenterworking` |
+| 107 | `cur_clean_time` | value | Time of the cleaning in progress, or of the last one, in seconds; it rises once a minute while the robot cleans |
+| 108 | `cur_clean_area` | value | Area of the cleaning in progress, or of the last one, in m² |
+| 116 | `total_clean_time` | value | Total cleaning time, in seconds |
+| 117 | `total_clean_area` | value | Total cleaned area, in m² |
+| 118 | `total_clean_count` | value | Number of cleanings, one more when each cleaning ends |
 | 123 | `path_comm` | raw | Live path, base64 JSON, `infoType` 21011 |
 | 124 | `cmd_comm` | raw | Not used yet |
 | 125 | `request_data` | enum | `map`, `path`, `both`; no local answer was observed for any of them |

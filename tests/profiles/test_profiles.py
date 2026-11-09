@@ -1,4 +1,6 @@
+import re
 import tempfile
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -245,11 +247,11 @@ def test_an_unreadable_profile_file_is_a_profile_error(tmp_path, content, reason
         load_profile(str(path))
 
 
-@pytest.mark.parametrize("key", ["high", "1.5", ""])
+@pytest.mark.parametrize("key", ["high", "1.5", "", "+1", "-1", "\u0663", " 2"])
 def test_a_water_level_key_must_be_a_whole_number(tmp_path, key):
     path = tmp_path / "robot.toml"
     path.write_text(f'extends = "lds-robot"\nname = "custom"\n[levels.water]\n"{key}" = "high"\n')
-    with pytest.raises(ProfileError, match=f"levels.water keys must be whole numbers, not '{key}'"):
+    with pytest.raises(ProfileError, match=re.escape(f"levels.water keys must be whole numbers, not {key!r}")):
         load_profile(str(path))
 
 
@@ -286,9 +288,26 @@ def well_typed(profile: Profile) -> bool:
 def test_any_profile_is_read_or_refused(override):
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / "robot.toml"
-        path.write_text(toml_document({"extends": "lds-robot", **override}), encoding="utf-8")
+        document = toml_document({"extends": "lds-robot", **override})
+        tomllib.loads(document)
+        path.write_text(document, encoding="utf-8")
         try:
             profile = load_profile(str(path))
         except ProfileError:
             return
     assert well_typed(profile)
+
+
+@pytest.mark.parametrize(("keys", "message"), [(("1", "01"), "level 1 twice, as '1' and '01'"), (("02",), "level 2")])
+def test_a_water_level_named_twice_is_a_profile_error(tmp_path, keys, message):
+    lines = "".join(f'"{key}" = "wet"\n' for key in keys)
+    path = tmp_path / "robot.toml"
+    path.write_text(f'extends = "lds-robot"\nname = "custom"\n[levels.water]\n{lines}')
+    with pytest.raises(ProfileError, match=message):
+        load_profile(str(path))
+
+
+def test_a_water_level_key_with_a_leading_zero_alone_is_read(tmp_path):
+    path = tmp_path / "robot.toml"
+    path.write_text(MINIMAL_PROFILE + '[levels.water]\n"07" = "high"\n')
+    assert load_profile(str(path)).levels.water == {7: "high"}

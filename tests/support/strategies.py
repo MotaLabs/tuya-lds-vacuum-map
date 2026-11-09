@@ -1,7 +1,10 @@
+from dataclasses import fields
+
 from hypothesis import strategies as st
 
 from tuya_lds_vacuum_map.lds.codec import encode_name
 from tuya_lds_vacuum_map.lds.messages import CLEAN_TARGET, COMMANDS, MAX_COORDINATE_MM, PATH, ROOM_LIST
+from tuya_lds_vacuum_map.profiles import CellCodes, DataPoints, Geometry, Levels, States, Units
 
 INFO_TYPES = (20002, 21003, 21004, 21005, 21011, 21023, 30000)
 KEYS = (
@@ -109,23 +112,11 @@ spot_commands = st.lists(points, max_size=4).map(
 
 PROFILE_KEYS = ("name", "description", "data_points", "states", "cells", "geometry", "levels", "units", "extra")
 PROFILE_INNER_KEYS = (
-    "state",
-    "raw",
-    "room_mode",
-    "total_count",
-    "moving",
-    "spot",
-    "names",
+    *(field.name for table in (DataPoints, States, CellCodes, Geometry, Levels, Units) for field in fields(table)),
     "idle",
-    "wall",
-    "room_min",
-    "spot_size_mm",
-    "fan",
-    "water",
     "quiet",
     "1",
-    "time",
-    "area",
+    "01",
 )
 toml_texts = st.text(st.characters(codec="utf-8"), max_size=6)
 toml_scalars = (

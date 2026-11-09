@@ -160,12 +160,16 @@ def _names(table: dict[str, Any], kind: str) -> dict[str, str]:
 
 
 def _water_levels(names: dict[str, str]) -> dict[int, str]:
-    levels = {}
+    levels: dict[int, str] = {}
+    keys: dict[int, str] = {}
     for key, name in names.items():
-        try:
-            levels[int(key)] = name
-        except ValueError:
-            raise ValueError(f"levels.water keys must be whole numbers, not {key!r}") from None
+        if not (key.isascii() and key.isdecimal()):
+            raise ValueError(f"levels.water keys must be whole numbers, not {key!r}")
+        level = int(key)
+        if level in keys:
+            raise ValueError(f"levels.water names level {level} twice, as {keys[level]!r} and {key!r}")
+        keys[level] = key
+        levels[level] = name
     return levels
 
 

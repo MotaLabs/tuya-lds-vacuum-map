@@ -8,6 +8,11 @@ random_room_color = "Sortear cor do cômodo"
 no_room = "Nenhum"
 auto_start = "Início automático"
 start_delay = "Espera para iniciar"
+clean_time = "Tempo da limpeza"
+clean_area = "Área da limpeza"
+total_time = "Tempo total de limpeza"
+total_area = "Área total limpa"
+total_count = "Número de limpezas"
 
 [levels]
 quiet = "Eco"

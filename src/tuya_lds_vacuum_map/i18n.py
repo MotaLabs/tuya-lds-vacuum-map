@@ -24,6 +24,11 @@ class Texts:
     no_room: str
     auto_start: str
     start_delay: str
+    clean_time: str
+    clean_area: str
+    total_time: str
+    total_area: str
+    total_count: str
     levels: dict[str, str]
     states: dict[str, str]
 

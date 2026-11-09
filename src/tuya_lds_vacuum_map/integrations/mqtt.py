@@ -75,6 +75,9 @@ class Topics:
     def start_delay_set(self) -> str:
         return f"{self.base}/start_delay/set"
 
+    def statistic(self, name: str) -> str:
+        return f"{self.base}/statistics/{name}"
+
     @property
     def inbound(self) -> tuple[str, ...]:
         return (
@@ -173,6 +176,56 @@ def discovery_configs(
             "entity_category": "config",
         },
     }
+
+
+@dataclass(frozen=True)
+class StatisticSensor:
+    state_class: str
+    unit: str | None = None
+    device_class: str | None = None
+    diagnostic: bool = False
+    icon: str | None = None
+
+
+STATISTIC_SENSORS = {
+    "clean_time": StatisticSensor("measurement", "time", "duration"),
+    "clean_area": StatisticSensor("measurement", "area", icon="mdi:texture-box"),
+    "total_time": StatisticSensor("total_increasing", "time", "duration", diagnostic=True),
+    "total_area": StatisticSensor("total_increasing", "area", diagnostic=True, icon="mdi:texture-box"),
+    "total_count": StatisticSensor("total_increasing", diagnostic=True, icon="mdi:counter"),
+}
+
+
+def statistic_configs(
+    topics: Topics,
+    availability: str,
+    unique_prefix: str,
+    device: dict[str, Any],
+    names: dict[str, str],
+    units: dict[str, str],
+    statistics: Sequence[str],
+) -> dict[str, dict[str, Any]]:
+    configs = {}
+    for name in statistics:
+        sensor = STATISTIC_SENSORS[name]
+        config: dict[str, Any] = {
+            "availability_topic": availability,
+            "device": device,
+            "name": names[name],
+            "unique_id": f"{unique_prefix}_{name}",
+            "state_topic": topics.statistic(name),
+            "state_class": sensor.state_class,
+        }
+        if sensor.unit:
+            config["unit_of_measurement"] = units[sensor.unit]
+        if sensor.device_class:
+            config["device_class"] = sensor.device_class
+        if sensor.diagnostic:
+            config["entity_category"] = "diagnostic"
+        if sensor.icon:
+            config["icon"] = sensor.icon
+        configs[f"sensor/{unique_prefix}_{name}"] = config
+    return configs
 
 
 class MqttBridge:

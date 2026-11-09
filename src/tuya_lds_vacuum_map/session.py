@@ -11,7 +11,7 @@ from .gestures import START_DELAY_RANGE, SpotPicker, TapController, TapMode, sta
 from .i18n import Texts
 from .integrations.homeassistant import HomeAssistant, HomeAssistantError
 from .integrations.localtuya import LocalTuyaLink
-from .integrations.mqtt import MqttBridge, Topics, discovery_configs
+from .integrations.mqtt import MqttBridge, Topics, discovery_configs, statistic_configs
 from .integrations.tuya_cloud import TuyaCloud
 from .lds.messages import Room, as_object, point_at
 from .map.colors import Color, format_color, parse_color, random_color
@@ -19,7 +19,7 @@ from .map.coverage import Coverage
 from .map.model import MapModel
 from .map.render import Renderer, Scene, Style
 from .profiles import Profile
-from .robot import Robot
+from .robot import STATISTICS, Robot
 from .storage import MapSource, Snapshot, Storage
 
 log = logging.getLogger(__name__)
@@ -95,6 +95,7 @@ class RobotSession:
 
     async def on_data_points(self, data_points: dict[int, Any]) -> None:
         update = self.robot.apply(data_points)
+        await self.publish_statistics(sorted(update.statistics))
         if update.new_path:
             self.map.coverage.paint(update.new_path)
         if update.rooms_changed:
@@ -222,6 +223,15 @@ class RobotSession:
             [texts.no_room, *(self.robot.rooms.names if self.robot.rooms else [])],
             START_DELAY_RANGE,
         )
+        configs |= statistic_configs(
+            self.topics,
+            self.settings.availability_topic,
+            f"tlvm_{self.device_id}",
+            self.device_info(),
+            {name: getattr(texts, name) for name in STATISTICS},
+            {"time": self.profile.units.time, "area": self.profile.units.area},
+            [name for name in STATISTICS if name in self.robot.statistic_dps.values()],
+        )
         await self.mqtt.publish_discovery(configs)
 
     async def publish_states(self) -> None:
@@ -234,6 +244,11 @@ class RobotSession:
         await self.mqtt.publish(topics.room_color, format_color(color) if color else "")
         await self.mqtt.publish(topics.auto_start, "ON" if self.snapshot.auto_start else "OFF")
         await self.mqtt.publish(topics.start_delay, f"{self.snapshot.start_delay:g}")
+        await self.publish_statistics(sorted(self.robot.statistics))
+
+    async def publish_statistics(self, names: list[str]) -> None:
+        for name in names:
+            await self.mqtt.publish(self.topics.statistic(name), str(self.robot.statistics[name]))
 
     def scene(self) -> Scene | None:
         rooms = self.robot.rooms

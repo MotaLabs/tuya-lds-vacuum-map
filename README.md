@@ -28,11 +28,12 @@ the map into cleaning commands sent over the local network.
 | Done | Spot cleaning | A tap shows the 1.5 m square around the point; a tap inside it, or the automatic start after a delay, sends the robot, and the square stays on the map with its path while it works. The preview and the automatic start have not been tried on a robot yet |
 | Done | Map source switch | `Automatic` (cloud while it answers, local otherwise) or `Local only`, from Home Assistant |
 | Done | English and Brazilian Portuguese | Entity names and map labels |
+| Done | Cleaning statistics | Time and area of the cleaning in progress or the last one, and the totals: time, area and number of cleanings |
 | Done | Several robots in one instance | Each robot gets its own device, map, topics and saved state; so far only one robot has run it |
 | Planned | Clean several rooms or points in the order tapped | Tap modes with a list and a start that waits for the last tap ([#4](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/4), [#5](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/5)) |
 | Planned | Draw an area and clean it | Needs the app's zone command captured ([#7](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/7)) |
 | Planned | Clean one area when the robot has several | Today a tap on an area cleans all of the robot's areas ([#8](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/8)) |
-| Planned | Room settings, parts, warnings and statistics from the service | Today they need Home Assistant helpers, templates and automations ([milestone 0.4](https://github.com/MotaLabs/tuya-lds-vacuum-map/milestone/3)) |
+| Planned | Room settings, parts and warnings from the service | Today they need Home Assistant helpers, templates and automations ([milestone 0.4](https://github.com/MotaLabs/tuya-lds-vacuum-map/milestone/3)) |
 | Planned | Edit areas and no-go zones from the map | Today they are edited in the app ([#15](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/15)) |
 | Not possible | Live map without the cloud | The robot only sends the path locally; the walls go to the cloud ([why](docs/protocol.md#data-points)) |
 
@@ -181,8 +182,8 @@ connection, the MQTT connection and the cloud project are shared.
 
 What differs between robots lives in a profile, not in the code: the data point numbers, which states mean
 the robot is moving or cleaning a spot, which text names each state, the cell codes of the cloud map, the
-cleaning width and spot size, and the suction and water levels. The built-in `lds-robot` profile is in
-[profiles/lds_robot.toml](src/tuya_lds_vacuum_map/profiles/lds_robot.toml).
+cleaning width and spot size, the suction and water levels, and the statistics data points and their units.
+The built-in `lds-robot` profile is in [profiles/lds_robot.toml](src/tuya_lds_vacuum_map/profiles/lds_robot.toml).
 
 A robot that differs in a few values does not need a full copy. A profile can extend another one and
 change only what differs:
@@ -214,6 +215,11 @@ The service creates, through MQTT discovery:
 | `button.<device>_random_room_color` | Gives the picked room a new random color |
 | `switch.<device>_automatic_start` | On: a spot preview starts by itself after the start delay. Off: only a tap inside it starts it |
 | `number.<device>_start_delay` | Seconds with no tap before a spot preview starts by itself, from 1 to 300 |
+| `sensor.<device>_cleaning_time`, `sensor.<device>_cleaned_area` | Time and area of the cleaning in progress, or of the last one once it ends |
+| `sensor.<device>_total_cleaning_time`, `sensor.<device>_total_cleaned_area`, `sensor.<device>_number_of_cleanings` | The robot's totals, as diagnostic sensors with the `total_increasing` state class |
+
+A statistics sensor exists only when the robot's profile names its data point, and its unit comes from the
+profile.
 
 A double tap also fires the `tuya_lds_vacuum_map_room_settings` event with `device_id`, `room_id` and
 `room_name`, for automations.

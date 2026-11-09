@@ -1,7 +1,13 @@
-import pytest
+import tempfile
+from pathlib import Path
 
+import pytest
+from hypothesis import example, given
+
+from support.strategies import profile_overrides
+from support.toml import toml_document
 from tuya_lds_vacuum_map.i18n import load_texts
-from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, ProfileError, builtin_profiles, load_profile
+from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, Profile, ProfileError, builtin_profiles, load_profile
 
 
 def test_the_default_profile_is_built_in():
@@ -214,6 +220,7 @@ def test_states_of_another_type_is_a_profile_error(tmp_path):
         ("[levels.fan]\nquiet = 1\n", "fan level names of quiet are not text"),
         ("[levels.water]\n2 = 2\n", "water level names of 2 are not text"),
         ("[levels.water.3]\nwet = true\n", "water level names of 3 are not text"),
+        ("[levels.fan]\nquiet = 1\nmax = 2\n", "fan level names of max, quiet are not text"),
     ],
 )
 def test_a_level_name_must_be_text(tmp_path, table, reason):
@@ -244,3 +251,44 @@ def test_a_water_level_key_must_be_a_whole_number(tmp_path, key):
     path.write_text(f'extends = "lds-robot"\nname = "custom"\n[levels.water]\n"{key}" = "high"\n')
     with pytest.raises(ProfileError, match=f"levels.water keys must be whole numbers, not '{key}'"):
         load_profile(str(path))
+
+
+def whole(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def texts(values: object) -> bool:
+    return all(isinstance(value, str) for value in values)
+
+
+def well_typed(profile: Profile) -> bool:
+    numbers = [*vars(profile.data_points).values(), *vars(profile.cells).values(), *vars(profile.geometry).values()]
+    return (
+        isinstance(profile.name, str)
+        and isinstance(profile.description, str)
+        and all(whole(number) or number is None for number in vars(profile.data_points).values())
+        and all(whole(number) for number in numbers if number is not None)
+        and texts(profile.states.moving)
+        and texts(profile.states.spot)
+        and texts(profile.states.names)
+        and texts(profile.states.names.values())
+        and texts(profile.levels.fan.values())
+        and all(whole(key) for key in profile.levels.water)
+        and texts(profile.levels.water.values())
+        and texts(vars(profile.units).values())
+    )
+
+
+@given(profile_overrides)
+@example({"levels": {"water": {"high": "high"}}})
+@example({"data_points": {"raw": "128"}})
+@example({"states": {"names": "emptying"}})
+def test_any_profile_is_read_or_refused(override):
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "robot.toml"
+        path.write_text(toml_document({"extends": "lds-robot", **override}), encoding="utf-8")
+        try:
+            profile = load_profile(str(path))
+        except ProfileError:
+            return
+    assert well_typed(profile)

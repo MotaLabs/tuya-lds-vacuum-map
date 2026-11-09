@@ -42,6 +42,8 @@ async def test_each_robot_reads_its_own_profile(harness):
 async def test_taps_go_to_the_robot_of_the_topic(harness):
     harness.session(OTHER).on_cloud_payload(cloud_payload())
     await harness.tap(0, 0, "spot", device_id=OTHER)
+    await harness.tap(0, 0, "spot", device_id=OTHER)
+    await harness.tap(0, 0, "spot")
     await harness.tap(0, 0, "spot")
     [(_, _, data)] = harness.services
     assert (data["device_id"], data["dp"]) == (OTHER, 200)

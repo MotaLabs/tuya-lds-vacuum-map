@@ -11,7 +11,7 @@ from hypothesis import example, given
 from hypothesis import strategies as st
 
 from support.fakes import FakeCloudSync
-from support.harness import DEVICE, Harness
+from support.harness import DEVICE, TIMING, Harness
 from support.maps import PROFILE, cell_center_mm, cloud_payload, rooms_message
 from support.strategies import json_scalars, json_values, path_chunks, room_lists, spot_commands
 from support.waiting import eventually, stop
@@ -84,9 +84,24 @@ async def test_map_source_and_room_selects(harness):
 async def test_spot_tap_reaches_localtuya(harness):
     harness.session().on_cloud_payload(cloud_payload())
     await harness.tap(1500, -4750, "spot")
+    scene = harness.session().scene()
+    assert scene.preview_center == (1500, -4750)
+    assert scene.preview_square == ((750, -5500), (2250, -5500), (2250, -4000), (750, -4000))
+    assert harness.services == []
+    await harness.tap(1500, -4750, "spot")
+    assert harness.session().scene().preview_square is None
     [(domain, service, data)] = harness.services
     assert (domain, service, data["device_id"], data["dp"]) == ("localtuya", "set_dp", DEVICE, DPS.raw)
     assert decode_raw(data["value"])["data"]["cmds"][0]["data"]["extraAreas"][0]["mode"] == "point"
+
+
+async def test_a_preview_that_goes_away_redraws_the_map(tmp_path):
+    harness = Harness(tmp_path, timing=dataclasses.replace(TIMING, spot_preview=0.05))
+    harness.session().on_cloud_payload(cloud_payload())
+    await harness.tap(1500, -4750, "spot")
+    harness.session().dirty.clear()
+    await eventually(lambda: harness.session().dirty.is_set())
+    assert harness.session().scene().preview_square is None
 
 
 async def test_a_tap_without_a_mode_cleans_the_room(harness):

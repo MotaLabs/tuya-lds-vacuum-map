@@ -7,7 +7,7 @@ from typing import Any
 
 from .cloud_sync import CloudMapSync
 from .config import RobotSettings, Settings
-from .gestures import TapController, TapMode
+from .gestures import SpotPicker, TapController, TapMode
 from .i18n import Texts
 from .integrations.homeassistant import HomeAssistant, HomeAssistantError
 from .integrations.localtuya import LocalTuyaLink
@@ -55,9 +55,11 @@ class RobotSession:
         coverage.load_list(self.snapshot.coverage)
         self.robot = Robot(profile, self.snapshot.room_message, self.snapshot.robot_state, self.snapshot.room_mode)
         self.renderer = Renderer(profile.cells, Style(scale=settings.map_scale, font_path=settings.font_path))
+        self.dirty = asyncio.Event()
         link = LocalTuyaLink(ha, config.device_id, profile.data_points.raw)
+        self.spots = SpotPicker(self.robot, link, geometry.spot_size_mm, settings.timing.spot_preview, self.dirty.set)
         self.taps = TapController(
-            self.robot, self.map, link, self.open_room_settings, settings.timing.double_tap, geometry.spot_size_mm
+            self.robot, self.map, link, self.open_room_settings, settings.timing.double_tap, self.spots
         )
         self.cloud_sync = (
             CloudMapSync(
@@ -75,7 +77,6 @@ class RobotSession:
         self.fan_labels = {value: levels.get(level, value) for value, level in profile.levels.fan.items()}
         self.water_labels = {value: levels.get(level, str(value)) for value, level in profile.levels.water.items()}
         self.state_labels = {code: self.texts.states.get(name, code) for code, name in profile.states.names.items()}
-        self.dirty = asyncio.Event()
         self.unsaved = False
         self.rng = random.Random()
         self.room_colors = _load_colors(self.snapshot.room_colors)
@@ -216,6 +217,7 @@ class RobotSession:
         grid = self.map.compose(rooms.rooms if rooms else ())
         if grid is None:
             return None
+        preview = self.spots.preview
         return Scene(
             grid=grid,
             rooms=rooms.rooms if rooms else (),
@@ -224,6 +226,8 @@ class RobotSession:
             robot=self.robot.path.position,
             dock=self.map.dock,
             spot=self.robot.spot,
+            preview_square=preview.square if preview else None,
+            preview_center=preview.center if preview else None,
             show_settings=bool(self.robot.room_mode),
             fan_labels=self.fan_labels,
             water_labels=self.water_labels,

@@ -93,12 +93,14 @@ def test_optional_settings_and_timings_are_parsed():
         "MAP_SCALE": "3",
         "TOPIC_PREFIX": "maps",
         "DOUBLE_TAP_SECONDS": "0.4",
+        "SPOT_PREVIEW_SECONDS": "90",
         "CLOUD_IDLE_REFRESH_SECONDS": "600",
     }
     settings = Settings.from_env(env)
     assert (settings.mqtt_port, settings.map_scale) == (8883, 3)
     assert settings.robot_topic("abc123") == "maps/abc123"
     assert settings.timing.double_tap == 0.4
+    assert settings.timing.spot_preview == 90
     assert settings.timing.cloud_refresh_idle == 600
     assert settings.timing.render_interval == Timing().render_interval
 

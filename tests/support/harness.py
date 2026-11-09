@@ -10,6 +10,7 @@ from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, Profile
 from tuya_lds_vacuum_map.session import RobotSession
 
 DEVICE = "dev123456"
+TIMING = Timing(double_tap=0.05, render_interval=0.01, save_interval=0.01)
 
 
 class Harness:
@@ -19,6 +20,7 @@ class Harness:
         robots: tuple[RobotSettings, ...] = (RobotSettings(DEVICE),),
         language: str = "en",
         profiles: dict[str, Profile] | None = None,
+        timing: Timing = TIMING,
     ) -> None:
         settings = Settings(
             ha_url="http://ha.local:8123",
@@ -27,7 +29,7 @@ class Harness:
             robots=robots,
             language=language,
             data_dir=str(data_dir),
-            timing=Timing(double_tap=0.05, render_interval=0.01, save_interval=0.01),
+            timing=timing,
         )
         self.app = App(settings, profiles or {DEFAULT_PROFILE: PROFILE}, load_texts(language))
         self.client = FakeClient()

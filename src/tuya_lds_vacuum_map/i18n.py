@@ -23,6 +23,7 @@ class Texts:
     random_room_color: str
     no_room: str
     levels: dict[str, str]
+    states: dict[str, str]
 
 
 def builtin_languages() -> list[str]:
@@ -35,11 +36,14 @@ def load_texts(language: str = DEFAULT_LANGUAGE) -> Texts:
     unknown = sorted(set(data) - {field.name for field in fields(Texts)})
     if unknown:
         raise TranslationError(f"unknown texts in {language!r}: {', '.join(unknown)}")
-    levels = data.get("levels", {})
-    unknown_levels = sorted(set(levels) - set(base["levels"]))
-    if unknown_levels:
-        raise TranslationError(f"unknown levels in {language!r}: {', '.join(unknown_levels)}")
-    return Texts(**{**base, **data, "levels": {**base["levels"], **levels}})
+    tables = {}
+    for table in ("levels", "states"):
+        values = data.get(table, {})
+        unknown_values = sorted(set(values) - set(base[table]))
+        if unknown_values:
+            raise TranslationError(f"unknown {table} in {language!r}: {', '.join(unknown_values)}")
+        tables[table] = {**base[table], **values}
+    return Texts(**{**base, **data, **tables})
 
 
 def _read(language: str) -> dict[str, Any]:

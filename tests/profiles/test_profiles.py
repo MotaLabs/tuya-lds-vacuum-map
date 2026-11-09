@@ -1,5 +1,6 @@
 import pytest
 
+from tuya_lds_vacuum_map.i18n import load_texts
 from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, ProfileError, builtin_profiles, load_profile
 
 
@@ -16,6 +17,13 @@ def test_the_default_profile_is_built_in():
     assert "totaling" in profile.states.moving
     assert profile.states.spot <= profile.states.moving
     assert profile.levels.water == {1: "low", 2: "medium", 3: "high"}
+    assert profile.states.names["dustcenterworking"] == "emptying"
+    assert profile.states.moving <= set(profile.states.names)
+
+
+@pytest.mark.parametrize("name", builtin_profiles())
+def test_every_state_a_built_in_profile_names_has_a_text(name):
+    assert set(load_profile(name).states.names.values()) <= set(load_texts().states)
 
 
 def test_cell_codes_know_the_room_range():
@@ -67,6 +75,14 @@ def test_an_incomplete_profile_is_an_error(tmp_path):
     broken.write_text('name = "broken"\n[data_points]\nstate = 1\n')
     with pytest.raises(ProfileError, match="broken"):
         load_profile(str(broken))
+
+
+@pytest.mark.parametrize("table", ["[states.names]\nmop = 1\n", "[states.names.mop]\nwet = true\n"])
+def test_a_state_name_must_be_text(tmp_path, table):
+    path = tmp_path / "robot.toml"
+    path.write_text(f'extends = "lds-robot"\nname = "custom"\n{table}')
+    with pytest.raises(ProfileError, match="state names of mop are not text"):
+        load_profile(str(path))
 
 
 @pytest.mark.parametrize(

@@ -74,6 +74,7 @@ class RobotSession:
         levels = self.texts.levels
         self.fan_labels = {value: levels.get(level, value) for value, level in profile.levels.fan.items()}
         self.water_labels = {value: levels.get(level, str(value)) for value, level in profile.levels.water.items()}
+        self.state_labels = {code: self.texts.states.get(name, code) for code, name in profile.states.names.items()}
         self.dirty = asyncio.Event()
         self.unsaved = False
         self.rng = random.Random()
@@ -248,6 +249,7 @@ class RobotSession:
         attributes = {
             "calibration_points": calibration,
             "robot_state": self.robot.state,
+            "robot_state_name": self.state_labels.get(self.robot.state, self.robot.state),
             "robot_position": {"x": position[0], "y": position[1]} if position else None,
             "map_source": self.snapshot.source.value,
             "rooms": [

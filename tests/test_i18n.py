@@ -8,15 +8,16 @@ from tuya_lds_vacuum_map.i18n import DEFAULT_LANGUAGE, TranslationError, builtin
 FOLDER = resources.files("tuya_lds_vacuum_map") / "translations"
 
 
-def keys(language: str) -> tuple[set[str], set[str]]:
+def keys(language: str) -> tuple[set[str], set[str], set[str]]:
     data = tomllib.loads((FOLDER / f"{language}.toml").read_text(encoding="utf-8"))
-    return set(data), set(data["levels"])
+    return set(data), set(data["levels"]), set(data["states"])
 
 
 def test_built_in_languages():
     assert {"en", "pt-BR"} <= set(builtin_languages())
     assert load_texts().map == "Map"
     assert load_texts("pt-BR").levels["quiet"] == "Eco"
+    assert load_texts("pt-BR").states["emptying"] == "Esvaziando na base"
 
 
 @pytest.mark.parametrize("language", builtin_languages())
@@ -26,10 +27,11 @@ def test_every_built_in_language_is_complete(language):
 
 def test_a_file_can_translate_part_of_the_texts(tmp_path):
     path = tmp_path / "mine.toml"
-    path.write_text('map = "Karte"\n[levels]\nquiet = "Leise"\n')
+    path.write_text('map = "Karte"\n[levels]\nquiet = "Leise"\n[states]\ncharging = "Lädt"\n')
     texts = load_texts(str(path))
     assert (texts.map, texts.map_source) == ("Karte", "Map source")
     assert (texts.levels["quiet"], texts.levels["high"]) == ("Leise", "High")
+    assert (texts.states["charging"], texts.states["emptying"]) == ("Lädt", "Emptying the bin")
 
 
 @pytest.mark.parametrize(
@@ -37,6 +39,7 @@ def test_a_file_can_translate_part_of_the_texts(tmp_path):
     [
         ('mapp = "Karte"\n', "unknown texts in .*: mapp"),
         ('[levels]\nturbo = "Turbo"\n', "unknown levels in .*: turbo"),
+        ('[states]\nflying = "Fliegt"\n', "unknown states in .*: flying"),
         ("map = \n", "invalid translation"),
     ],
 )

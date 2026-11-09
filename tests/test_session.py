@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import colorsys
+import dataclasses
 import json
 import random
 import tempfile
@@ -17,6 +18,7 @@ from support.waiting import eventually, stop
 from tuya_lds_vacuum_map.integrations.localtuya import DP_EVENT, STATUS_EVENT
 from tuya_lds_vacuum_map.lds.codec import decode_raw, encode_raw
 from tuya_lds_vacuum_map.map.colors import format_color
+from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE
 from tuya_lds_vacuum_map.session import ROOM_SETTINGS_EVENT
 from tuya_lds_vacuum_map.storage import MapSource, Snapshot, Storage
 
@@ -356,6 +358,30 @@ async def test_map_attributes_have_no_position_before_the_path(harness):
     harness.session().on_cloud_payload(cloud_payload())
     await harness.session().redraw()
     assert json.loads(harness.client.last(harness.session().topics.map_attributes))["robot_position"] is None
+
+
+async def test_map_attributes_name_the_robot_state(harness):
+    harness.session().on_cloud_payload(cloud_payload())
+    await harness.session().redraw()
+    assert json.loads(harness.client.last(harness.session().topics.map_attributes))["robot_state_name"] is None
+    await harness.dp(DPS.state, "dustcenterworking")
+    await harness.session().redraw()
+    attributes = json.loads(harness.client.last(harness.session().topics.map_attributes))
+    assert (attributes["robot_state"], attributes["robot_state_name"]) == ("dustcenterworking", "Emptying the bin")
+    await harness.dp(DPS.state, "somersault")
+    await harness.session().redraw()
+    assert json.loads(harness.client.last(harness.session().topics.map_attributes))["robot_state_name"] == "somersault"
+
+
+def test_robot_state_names_follow_the_language(tmp_path):
+    assert Harness(tmp_path, language="pt-BR").session().state_labels["chargring"] == "Carregando"
+
+
+def test_a_state_name_with_no_text_shows_the_code(tmp_path):
+    names = {**PROFILE.states.names, "stairs": "climbing"}
+    profile = dataclasses.replace(PROFILE, states=dataclasses.replace(PROFILE.states, names=names))
+    labels = Harness(tmp_path, profiles={DEFAULT_PROFILE: profile}).session().state_labels
+    assert (labels["stairs"], labels["mop"]) == ("stairs", "Mopping")
 
 
 async def test_map_attributes_list_room_colors(harness):

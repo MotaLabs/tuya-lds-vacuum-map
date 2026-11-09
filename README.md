@@ -85,7 +85,8 @@ include `path_comm` (123) and `comm_raw` (127), are likely to work. If you have 
     `localtuya.set_dp`.
   - The MQTT integration, with discovery on.
   - [xiaomi-vacuum-map-card](https://github.com/PiotrMachowski/lovelace-xiaomi-vacuum-map-card), from HACS.
-  - A long-lived access token.
+  - A long-lived access token of an admin user. Home Assistant lets only admins subscribe to the LocalTuya events,
+    and the service does not connect until both subscriptions are accepted.
 - An MQTT broker the service can reach.
 - Optional, for the cloud map: a project on the [Tuya developer platform](https://platform.tuya.com) with the
   **IoT Core** service and the **Sweeping Robot Open Service** API, linked to the app account that owns the

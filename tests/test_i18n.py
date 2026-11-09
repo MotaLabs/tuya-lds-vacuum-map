@@ -41,6 +41,13 @@ def test_a_file_can_translate_part_of_the_texts(tmp_path):
         ('[levels]\nturbo = "Turbo"\n', "unknown levels in .*: turbo"),
         ('[states]\nflying = "Fliegt"\n', "unknown states in .*: flying"),
         ("map = \n", "invalid translation"),
+        ("levels = []\n", "levels in .* must be a table, not \\[\\]"),
+        ("states = 5\n", "states in .* must be a table, not 5"),
+        ("[levels]\nquiet = 1\n", "levels in .* that are not text: quiet"),
+        ("[levels]\nquiet = 1\nmax = 2\n", "levels in .* that are not text: max, quiet"),
+        ("[states.charging]\nshort = 'Lädt'\n", "states in .* that are not text: charging"),
+        ("map = 5\n", "texts in .* that are not text: map"),
+        ("map = ['Karte']\nno_room = true\n", "texts in .* that are not text: map, no_room"),
     ],
 )
 def test_bad_translation_files(tmp_path, text, message):

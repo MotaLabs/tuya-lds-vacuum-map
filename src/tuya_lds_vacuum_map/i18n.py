@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_LANGUAGE = "en"
+TABLES = ("levels", "states")
 _FOLDER = resources.files(__package__) / "translations"
 
 
@@ -43,14 +44,24 @@ def load_texts(language: str = DEFAULT_LANGUAGE) -> Texts:
     unknown = sorted(set(data) - {field.name for field in fields(Texts)})
     if unknown:
         raise TranslationError(f"unknown texts in {language!r}: {', '.join(unknown)}")
+    _check_text({key: value for key, value in data.items() if key not in TABLES}, "texts", language)
     tables = {}
-    for table in ("levels", "states"):
+    for table in TABLES:
         values = data.get(table, {})
+        if not isinstance(values, dict):
+            raise TranslationError(f"{table} in {language!r} must be a table, not {values!r}")
         unknown_values = sorted(set(values) - set(base[table]))
         if unknown_values:
             raise TranslationError(f"unknown {table} in {language!r}: {', '.join(unknown_values)}")
+        _check_text(values, table, language)
         tables[table] = {**base[table], **values}
     return Texts(**{**base, **data, **tables})
+
+
+def _check_text(values: dict[str, Any], kind: str, language: str) -> None:
+    wrong = sorted(key for key, value in values.items() if not isinstance(value, str))
+    if wrong:
+        raise TranslationError(f"{kind} in {language!r} that are not text: {', '.join(wrong)}")
 
 
 def _read(language: str) -> dict[str, Any]:

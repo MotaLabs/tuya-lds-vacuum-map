@@ -157,7 +157,7 @@ class _Painter:
             self.draw.polygon(points, fill=(255, 255, 255, 60))
             self.dashed(points, (40, 40, 40, 255))
             if area.name:
-                left, top = min(p[0] for p in points) + 6, min(p[1] for p in points) + 6
+                left, top = round(min(p[0] for p in points)) + 6, round(min(p[1] for p in points)) + 6
                 box = self.draw.textbbox((left, top), area.name, font=self.small)
                 self.draw.rounded_rectangle(
                     (box[0] - 3, box[1] - 2, box[2] + 3, box[3] + 2), radius=4, fill=(40, 40, 40, 210)
@@ -176,7 +176,9 @@ class _Painter:
             fill=(255, 255, 255, 240),
             outline=(200, 200, 200, 255),
         )
-        self.draw.text((cx - width / 2, cy - height / 2 - box[1]), room.name, font=self.font, fill=(30, 30, 30, 255))
+        self.draw.text(
+            (round(cx - width / 2), round(cy - height / 2 - box[1])), room.name, font=self.font, fill=(30, 30, 30, 255)
+        )
         if scene.show_settings:
             self.settings(room, scene, cx, cy + height / 2 + 12)
 

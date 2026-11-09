@@ -132,6 +132,15 @@ def test_an_area_under_the_spot_keeps_its_border(payload):
     assert all(sum(with_spot.getpixel(p)) < 200 for p in inside)
 
 
+def test_names_that_draw_nothing_do_not_break_the_map(payload):
+    grid = GridMap.from_cloud(payload)
+    far = ((0, 21825), (500, 21825), (500, 22325), (0, 22325))
+    rooms = (Room(1, "\u200b", pos=far[0]), Room(2, "\xad", pos=far[2]))
+    area = Area(1, "area", "normal", "\u200b", far)
+    image = render(Scene(grid, rooms=rooms, room_colors=COLORS, areas=(area,)))
+    assert image.size == (WIDTH * SCALE, HEIGHT * SCALE)
+
+
 def test_forbidden_area_is_red(payload):
     grid = GridMap.from_cloud(payload)
     x, y = cell_center_mm(30, 20)

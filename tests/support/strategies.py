@@ -106,3 +106,37 @@ spot_commands = st.lists(points, max_size=4).map(
         "data": {"cmds": [{"infoType": CLEAN_TARGET, "data": {"extraAreas": [{"mode": "point", "vertexs": vertexs}]}}]},
     }
 )
+
+PROFILE_KEYS = ("name", "description", "data_points", "states", "cells", "geometry", "levels", "units", "extra")
+PROFILE_INNER_KEYS = (
+    "state",
+    "raw",
+    "room_mode",
+    "total_count",
+    "moving",
+    "spot",
+    "names",
+    "idle",
+    "wall",
+    "room_min",
+    "spot_size_mm",
+    "fan",
+    "water",
+    "quiet",
+    "1",
+    "time",
+    "area",
+)
+toml_texts = st.text(st.characters(codec="utf-8"), max_size=6)
+toml_scalars = (
+    st.booleans() | st.integers(-(2**63), 2**63 - 1) | st.floats() | toml_texts | st.sampled_from(PROFILE_INNER_KEYS)
+)
+toml_values = st.recursive(
+    toml_scalars,
+    lambda children: (
+        st.lists(children, max_size=3)
+        | st.dictionaries(st.sampled_from(PROFILE_INNER_KEYS) | toml_texts, children, max_size=3)
+    ),
+    max_leaves=8,
+)
+profile_overrides = st.dictionaries(st.sampled_from(PROFILE_KEYS), toml_values, max_size=4)

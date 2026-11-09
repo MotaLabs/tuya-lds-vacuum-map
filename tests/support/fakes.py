@@ -1,5 +1,7 @@
 import asyncio
 
+from websockets.exceptions import ConnectionClosedError
+
 
 class FakeClient:
     def __init__(self) -> None:
@@ -13,6 +15,11 @@ class FakeClient:
 
     def topics(self) -> list[str]:
         return [topic for topic, _ in self.published]
+
+
+class ClosedSocket:
+    async def send(self, message: str) -> None:
+        raise ConnectionClosedError(None, None)
 
 
 class FakeCloudSync:

@@ -82,5 +82,11 @@ class HomeAssistant:
         self._next_id += 1
         future = asyncio.get_running_loop().create_future()
         self._pending[message_id] = future
-        await self._ws.send(json.dumps({**payload, "id": message_id}))
+        try:
+            await self._ws.send(json.dumps({**payload, "id": message_id}))
+        except websockets.WebSocketException as error:
+            self._pending.pop(message_id, None)
+            if future.done():
+                future.exception()
+            raise HomeAssistantError(f"websocket closed: {error}") from error
         return future

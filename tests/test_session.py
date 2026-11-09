@@ -18,7 +18,7 @@ from support.waiting import eventually, stop
 from tuya_lds_vacuum_map.integrations.localtuya import DP_EVENT, STATUS_EVENT
 from tuya_lds_vacuum_map.lds.codec import decode_raw, encode_raw
 from tuya_lds_vacuum_map.map.colors import format_color
-from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE
+from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, Units
 from tuya_lds_vacuum_map.session import ROOM_SETTINGS_EVENT
 from tuya_lds_vacuum_map.storage import MapSource, Snapshot, Storage
 
@@ -38,6 +38,59 @@ async def test_room_list_republishes_the_room_options(harness):
     assert config["options"] == ["None", "Left", "Right"]
     assert harness.session().dirty.is_set()
     assert harness.session().unsaved
+
+
+async def test_statistics_reach_their_sensors(harness):
+    await harness.dp(DPS.clean_time, 480)
+    await harness.dp(DPS.total_count, 950)
+    await harness.dp(DPS.total_count, 950)
+    topics = harness.session().topics
+    assert harness.client.last(topics.statistic("clean_time")) == "480"
+    assert harness.client.topics().count(topics.statistic("total_count")) == 1
+    assert harness.client.last(topics.statistic("total_count")) == "950"
+    harness.client.published.clear()
+    await harness.session().on_connect()
+    assert harness.client.last(topics.statistic("clean_time")) == "480"
+    assert harness.client.last(topics.statistic("total_count")) == "950"
+
+
+async def test_discovery_announces_a_sensor_per_statistic_of_the_profile(harness):
+    await harness.session().publish_discovery()
+    prefix = f"homeassistant/sensor/tlvm_{DEVICE}"
+    sensors = sorted(topic for topic in harness.client.topics() if topic.startswith(prefix))
+    assert sensors == [
+        f"{prefix}_{name}/config" for name in ("clean_area", "clean_time", "total_area", "total_count", "total_time")
+    ]
+    total_time = json.loads(harness.client.last(f"{prefix}_total_time/config"))
+    assert (total_time["name"], total_time["unit_of_measurement"]) == ("Total cleaning time", "s")
+    area = json.loads(harness.client.last(f"{prefix}_clean_area/config"))
+    assert (area["name"], area["unit_of_measurement"]) == ("Cleaned area", "m²")
+
+
+async def test_the_statistics_take_their_units_from_the_profile(tmp_path):
+    profile = dataclasses.replace(PROFILE, units=Units(time="min", area="ft²"))
+    harness = Harness(tmp_path, profiles={DEFAULT_PROFILE: profile})
+    await harness.session().publish_discovery()
+    prefix = f"homeassistant/sensor/tlvm_{DEVICE}"
+    units = {
+        name: json.loads(harness.client.last(f"{prefix}_{name}/config")).get("unit_of_measurement")
+        for name in ("clean_time", "total_time", "clean_area", "total_area", "total_count")
+    }
+    assert units == {
+        "clean_time": "min",
+        "total_time": "min",
+        "clean_area": "ft²",
+        "total_area": "ft²",
+        "total_count": None,
+    }
+
+
+async def test_a_profile_without_statistics_announces_no_sensor(tmp_path):
+    profile = dataclasses.replace(PROFILE, data_points=dataclasses.replace(PROFILE.data_points, total_count=None))
+    harness = Harness(tmp_path, profiles={DEFAULT_PROFILE: profile})
+    await harness.session().publish_discovery()
+    assert not any(topic.endswith("_total_count/config") for topic in harness.client.topics())
+    assert any(topic.endswith("_total_time/config") for topic in harness.client.topics())
 
 
 async def test_events_from_other_devices_are_ignored(harness):

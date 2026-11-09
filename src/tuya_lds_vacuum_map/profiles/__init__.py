@@ -17,6 +17,11 @@ class DataPoints:
     path: int
     raw: int
     room_mode: int | None = None
+    clean_time: int | None = None
+    clean_area: int | None = None
+    total_time: int | None = None
+    total_area: int | None = None
+    total_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +57,12 @@ class Levels:
 
 
 @dataclass(frozen=True)
+class Units:
+    time: str = "s"
+    area: str = "m²"
+
+
+@dataclass(frozen=True)
 class Profile:
     name: str
     description: str
@@ -60,6 +71,7 @@ class Profile:
     cells: CellCodes
     geometry: Geometry
     levels: Levels
+    units: Units = Units()
 
 
 def builtin_profiles() -> list[str]:
@@ -150,6 +162,7 @@ def _names(table: dict[str, Any], kind: str) -> dict[str, str]:
 def _build(data: dict[str, Any]) -> Profile:
     states = _table(data["states"], "states")
     levels = _table(data.get("levels", {}), "levels")
+    units = _table(data.get("units", {}), "units")
     water = _names(_table(levels.get("water", {}), "levels.water"), "water level")
     return Profile(
         name=_text(data["name"], "name"),
@@ -166,4 +179,5 @@ def _build(data: dict[str, Any]) -> Profile:
             fan=_names(_table(levels.get("fan", {}), "levels.fan"), "fan level"),
             water={int(key): value for key, value in water.items()},
         ),
+        units=Units(**{key: _text(value, f"units.{key}") for key, value in units.items()}),
     )

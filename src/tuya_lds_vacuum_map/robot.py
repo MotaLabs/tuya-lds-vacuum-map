@@ -9,6 +9,8 @@ from .profiles import Profile
 
 log = logging.getLogger(__name__)
 
+STATISTICS = ("clean_time", "clean_area", "total_time", "total_area", "total_count")
+
 
 @dataclass
 class Update:
@@ -18,6 +20,7 @@ class Update:
     started_moving: bool = False
     stopped_moving: bool = False
     new_path: list[Point] = field(default_factory=list)
+    statistics: set[str] = field(default_factory=set)
 
 
 class Robot:
@@ -36,6 +39,12 @@ class Robot:
         self.path = PathTracker()
         self.spot: tuple[Point, ...] | None = None
         self.spot_command: dict[str, Any] | None = None
+        self.statistics: dict[str, int] = {}
+        self.statistic_dps = {
+            getattr(profile.data_points, name): name
+            for name in STATISTICS
+            if getattr(profile.data_points, name) is not None
+        }
 
     @property
     def moving(self) -> bool:
@@ -55,6 +64,8 @@ class Robot:
                 elif dp == dps.room_mode and isinstance(value, bool):
                     self.room_mode = value
                     update.redraw = True
+                elif dp in self.statistic_dps and isinstance(value, int) and not isinstance(value, bool):
+                    self._apply_statistic(self.statistic_dps[dp], value, update)
             except (ValueError, KeyError, TypeError) as error:
                 log.warning("could not read data point %s: %s", dp, error)
         return update
@@ -68,6 +79,11 @@ class Robot:
         if previous in spot_states and value not in spot_states:
             self.spot = None
         update.redraw = True
+
+    def _apply_statistic(self, name: str, value: int, update: Update) -> None:
+        if self.statistics.get(name) != value:
+            self.statistics[name] = value
+            update.statistics.add(name)
 
     def _apply_path(self, value: str, update: Update) -> None:
         chunk = path_chunk(codec.decode_raw(value))

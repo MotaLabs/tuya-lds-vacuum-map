@@ -19,6 +19,15 @@ def test_the_default_profile_is_built_in():
     assert profile.levels.water == {1: "low", 2: "medium", 3: "high"}
     assert profile.states.names["dustcenterworking"] == "emptying"
     assert profile.states.moving <= set(profile.states.names)
+    statistics = profile.data_points
+    assert (
+        statistics.clean_time,
+        statistics.clean_area,
+        statistics.total_time,
+        statistics.total_area,
+        statistics.total_count,
+    ) == (107, 108, 116, 117, 118)
+    assert (profile.units.time, profile.units.area) == ("s", "m²")
 
 
 @pytest.mark.parametrize("name", builtin_profiles())
@@ -165,7 +174,31 @@ coverage_cell_mm = 3
 def test_a_data_point_left_out_stays_out(tmp_path):
     path = tmp_path / "robot.toml"
     path.write_text(MINIMAL_PROFILE)
-    assert load_profile(str(path)).data_points.room_mode is None
+    profile = load_profile(str(path))
+    assert profile.data_points.room_mode is None
+    assert profile.data_points.total_count is None
+    assert (profile.units.time, profile.units.area) == ("s", "m²")
+
+
+def test_a_profile_can_change_the_units(tmp_path):
+    path = tmp_path / "robot.toml"
+    path.write_text('extends = "lds-robot"\nname = "custom"\n[units]\ntime = "min"\n')
+    assert (load_profile(str(path)).units.time, load_profile(str(path)).units.area) == ("min", "m²")
+
+
+@pytest.mark.parametrize(
+    ("table", "reason"),
+    [
+        ('units = "s"\n', "units must be a table"),
+        ("[units]\ntime = 60\n", "units.time must be text"),
+        ('[units]\nspeed = "m/s"\n', "speed"),
+    ],
+)
+def test_units_of_another_kind_are_a_profile_error(tmp_path, table, reason):
+    path = tmp_path / "robot.toml"
+    path.write_text(f'extends = "lds-robot"\nname = "custom"\n{table}')
+    with pytest.raises(ProfileError, match=reason):
+        load_profile(str(path))
 
 
 def test_states_of_another_type_is_a_profile_error(tmp_path):

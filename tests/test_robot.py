@@ -107,6 +107,33 @@ def test_room_mode_switch():
     assert robot.room_mode is True
 
 
+def test_statistics_are_read_and_each_change_is_reported():
+    robot = Robot(PROFILE)
+    update = robot.apply({DPS.clean_time: 480, DPS.clean_area: 4, DPS.total_count: 950})
+    assert robot.statistics == {"clean_time": 480, "clean_area": 4, "total_count": 950}
+    assert update.statistics == {"clean_time", "clean_area", "total_count"}
+    assert not update.redraw
+    update = robot.apply({DPS.clean_time: 480, DPS.total_time: 717181, DPS.total_area: 8930})
+    assert update.statistics == {"total_time", "total_area"}
+    assert robot.apply({DPS.clean_time: 540}).statistics == {"clean_time"}
+    assert robot.statistics["clean_time"] == 540
+
+
+def test_a_statistic_that_is_not_a_whole_number_is_skipped():
+    robot = Robot(PROFILE)
+    update = robot.apply({DPS.clean_time: "480", DPS.clean_area: True, DPS.total_time: 1.5})
+    assert robot.statistics == {}
+    assert update.statistics == set()
+
+
+def test_a_profile_without_statistics_reads_none():
+    profile = dataclasses.replace(PROFILE, data_points=DataPoints(state=1, path=2, raw=3))
+    robot = Robot(profile)
+    assert robot.statistic_dps == {}
+    assert robot.apply({107: 480, 118: 950}).statistics == set()
+    assert robot.statistics == {}
+
+
 def test_bad_values_are_skipped():
     robot = Robot(PROFILE)
     update = robot.apply({DPS.raw: "not base64 json", DPS.state: 3, 999: "x"})

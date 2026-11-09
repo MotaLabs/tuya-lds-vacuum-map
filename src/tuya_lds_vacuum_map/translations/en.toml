@@ -8,6 +8,11 @@ random_room_color = "Random room color"
 no_room = "None"
 auto_start = "Automatic start"
 start_delay = "Start delay"
+clean_time = "Cleaning time"
+clean_area = "Cleaned area"
+total_time = "Total cleaning time"
+total_area = "Total cleaned area"
+total_count = "Number of cleanings"
 
 [levels]
 quiet = "Quiet"

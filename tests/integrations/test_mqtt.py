@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import aiomqtt
 
 from support.waiting import eventually, stop
-from tuya_lds_vacuum_map.integrations.mqtt import Broker, MqttBridge, Topics, discovery_configs
+from tuya_lds_vacuum_map.integrations.mqtt import Broker, MqttBridge, Topics, discovery_configs, statistic_configs
 
 TOPICS = Topics("maps/dev")
 AVAILABILITY = "maps/availability"
@@ -104,6 +104,57 @@ def test_discovery_configs():
     assert all(
         config["availability_topic"] == AVAILABILITY and config["device"] == DEVICE for config in configs.values()
     )
+
+
+def test_statistic_configs():
+    names = {"clean_time": "Time", "clean_area": "Area", "total_time": "Total time", "total_count": "Count"}
+    configs = statistic_configs(
+        TOPICS,
+        AVAILABILITY,
+        "tlvm_dev",
+        DEVICE,
+        names,
+        {"time": "s", "area": "m²"},
+        ["clean_time", "clean_area", "total_time", "total_count"],
+    )
+    assert sorted(configs) == [
+        "sensor/tlvm_dev_clean_area",
+        "sensor/tlvm_dev_clean_time",
+        "sensor/tlvm_dev_total_count",
+        "sensor/tlvm_dev_total_time",
+    ]
+    assert TOPICS.statistic("clean_time") == "maps/dev/statistics/clean_time"
+    assert configs["sensor/tlvm_dev_clean_time"] == {
+        "availability_topic": AVAILABILITY,
+        "device": DEVICE,
+        "name": "Time",
+        "unique_id": "tlvm_dev_clean_time",
+        "state_topic": "maps/dev/statistics/clean_time",
+        "state_class": "measurement",
+        "unit_of_measurement": "s",
+        "device_class": "duration",
+    }
+    area = configs["sensor/tlvm_dev_clean_area"]
+    assert (area["unit_of_measurement"], area["state_class"]) == ("m²", "measurement")
+    assert "device_class" not in area
+    assert "entity_category" not in area
+    total = configs["sensor/tlvm_dev_total_time"]
+    assert (total["state_class"], total["entity_category"], total["device_class"]) == (
+        "total_increasing",
+        "diagnostic",
+        "duration",
+    )
+    count = configs["sensor/tlvm_dev_total_count"]
+    assert "unit_of_measurement" not in count
+    assert (count["state_class"], count["entity_category"], count["icon"]) == (
+        "total_increasing",
+        "diagnostic",
+        "mdi:counter",
+    )
+
+
+def test_no_statistic_gives_no_sensor():
+    assert statistic_configs(TOPICS, AVAILABILITY, "tlvm_dev", DEVICE, {}, {}, []) == {}
 
 
 async def test_publish_needs_a_connection():

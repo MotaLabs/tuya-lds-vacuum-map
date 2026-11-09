@@ -86,6 +86,111 @@ def test_a_state_name_must_be_text(tmp_path, table):
 
 
 @pytest.mark.parametrize(
+    ("table", "reason"),
+    [
+        ('[states]\nnames = "emptying"\n', "states.names must be a table"),
+        ("[states]\nnames = [1, 2]\n", "states.names must be a table"),
+        ('[levels]\nwater = "high"\n', "levels.water must be a table"),
+        ('[levels]\nfan = ["quiet"]\n', "levels.fan must be a table"),
+        ('levels = "high"\n', "levels must be a table"),
+    ],
+)
+def test_a_table_of_another_type_is_a_profile_error(tmp_path, table, reason):
+    path = tmp_path / "robot.toml"
+    path.write_text(f'extends = "lds-robot"\nname = "custom"\n{table}')
+    with pytest.raises(ProfileError, match=f"invalid robot profile .*{reason}"):
+        load_profile(str(path))
+
+
+@pytest.mark.parametrize(
+    ("table", "reason"),
+    [
+        ('[states]\nmoving = "totaling"\n', "states.moving must be a list of state codes"),
+        ("[states]\nmoving = [105]\n", "states.moving must be a list of state codes"),
+        ('[states]\nspot = "pointing"\n', "states.spot must be a list of state codes"),
+        ('[states]\nspot = ["pointing", true]\n', "states.spot must be a list of state codes"),
+    ],
+)
+def test_state_codes_must_be_a_list_of_text(tmp_path, table, reason):
+    path = tmp_path / "robot.toml"
+    path.write_text(f'extends = "lds-robot"\nname = "custom"\n{table}')
+    with pytest.raises(ProfileError, match=reason):
+        load_profile(str(path))
+
+
+@pytest.mark.parametrize(
+    ("table", "reason"),
+    [
+        ('[data_points]\nraw = "128"\n', "data_points.raw must be a whole number, not '128'"),
+        ("[data_points]\nroom_mode = true\n", "data_points.room_mode must be a whole number"),
+        ("[cells]\nwall = 0.5\n", "cells.wall must be a whole number"),
+        ('[geometry]\nspot_size_mm = "1000"\n', "geometry.spot_size_mm must be a whole number"),
+        ("data_points = [123]\n", "data_points must be a table"),
+        ("name = 5\n", "name must be text, not 5"),
+        ("description = []\n", "description must be text"),
+    ],
+)
+def test_a_value_of_another_type_is_a_profile_error(tmp_path, table, reason):
+    path = tmp_path / "robot.toml"
+    path.write_text(f'extends = "lds-robot"\n{table}')
+    with pytest.raises(ProfileError, match=reason):
+        load_profile(str(path))
+
+
+MINIMAL_PROFILE = """
+name = "custom"
+
+[data_points]
+state = 1
+path = 2
+raw = 3
+
+[states]
+moving = []
+
+[cells]
+wall = 1
+unknown = 2
+room_min = 3
+room_max = 4
+floor = 5
+
+[geometry]
+cleaning_radius_mm = 1
+spot_size_mm = 2
+coverage_cell_mm = 3
+"""
+
+
+def test_a_data_point_left_out_stays_out(tmp_path):
+    path = tmp_path / "robot.toml"
+    path.write_text(MINIMAL_PROFILE)
+    assert load_profile(str(path)).data_points.room_mode is None
+
+
+def test_states_of_another_type_is_a_profile_error(tmp_path):
+    path = tmp_path / "robot.toml"
+    path.write_text('name = "custom"\nstates = "idle"\n')
+    with pytest.raises(ProfileError, match="states must be a table"):
+        load_profile(str(path))
+
+
+@pytest.mark.parametrize(
+    ("table", "reason"),
+    [
+        ("[levels.fan]\nquiet = 1\n", "fan level names of quiet are not text"),
+        ("[levels.water]\n2 = 2\n", "water level names of 2 are not text"),
+        ("[levels.water.3]\nwet = true\n", "water level names of 3 are not text"),
+    ],
+)
+def test_a_level_name_must_be_text(tmp_path, table, reason):
+    path = tmp_path / "robot.toml"
+    path.write_text(f'extends = "lds-robot"\nname = "custom"\n{table}')
+    with pytest.raises(ProfileError, match=reason):
+        load_profile(str(path))
+
+
+@pytest.mark.parametrize(
     ("content", "reason"),
     [
         (b'name = "broken', "not valid TOML"),

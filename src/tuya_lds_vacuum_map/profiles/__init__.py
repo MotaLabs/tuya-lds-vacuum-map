@@ -1,5 +1,5 @@
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -111,28 +111,59 @@ def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     return merged
 
 
-def _state_names(names: dict[str, Any]) -> dict[str, str]:
-    wrong = sorted(code for code, name in names.items() if not isinstance(name, str))
+def _table(value: Any, name: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{name} must be a table, not {value!r}")
+    return value
+
+
+def _numbers[T](cls: type[T], value: Any, name: str) -> T:
+    numbers = cls(**_table(value, name))
+    for field in fields(numbers):
+        number = getattr(numbers, field.name)
+        if number is None and field.default is None:
+            continue
+        if isinstance(number, bool) or not isinstance(number, int):
+            raise ValueError(f"{name}.{field.name} must be a whole number, not {number!r}")
+    return numbers
+
+
+def _text(value: Any, name: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be text, not {value!r}")
+    return value
+
+
+def _codes(value: Any, name: str) -> frozenset[str]:
+    if not isinstance(value, list) or not all(isinstance(code, str) for code in value):
+        raise ValueError(f"{name} must be a list of state codes, not {value!r}")
+    return frozenset(value)
+
+
+def _names(table: dict[str, Any], kind: str) -> dict[str, str]:
+    wrong = sorted(key for key, name in table.items() if not isinstance(name, str))
     if wrong:
-        raise ValueError(f"the state names of {', '.join(wrong)} are not text")
-    return dict(names)
+        raise ValueError(f"the {kind} names of {', '.join(wrong)} are not text")
+    return dict(table)
 
 
 def _build(data: dict[str, Any]) -> Profile:
-    states = data["states"]
-    levels = data.get("levels", {})
+    states = _table(data["states"], "states")
+    levels = _table(data.get("levels", {}), "levels")
+    water = _names(_table(levels.get("water", {}), "levels.water"), "water level")
     return Profile(
-        name=data["name"],
-        description=data.get("description", ""),
-        data_points=DataPoints(**data["data_points"]),
+        name=_text(data["name"], "name"),
+        description=_text(data.get("description", ""), "description"),
+        data_points=_numbers(DataPoints, data["data_points"], "data_points"),
         states=States(
-            moving=frozenset(states["moving"]),
-            spot=frozenset(states.get("spot", [])),
-            names=_state_names(states.get("names", {})),
+            moving=_codes(states["moving"], "states.moving"),
+            spot=_codes(states.get("spot", []), "states.spot"),
+            names=_names(_table(states.get("names", {}), "states.names"), "state"),
         ),
-        cells=CellCodes(**data["cells"]),
-        geometry=Geometry(**data["geometry"]),
+        cells=_numbers(CellCodes, data["cells"], "cells"),
+        geometry=_numbers(Geometry, data["geometry"], "geometry"),
         levels=Levels(
-            fan=dict(levels.get("fan", {})), water={int(key): value for key, value in levels.get("water", {}).items()}
+            fan=_names(_table(levels.get("fan", {}), "levels.fan"), "fan level"),
+            water={int(key): value for key, value in water.items()},
         ),
     )

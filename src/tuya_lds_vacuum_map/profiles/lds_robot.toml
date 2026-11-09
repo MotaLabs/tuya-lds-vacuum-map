@@ -11,6 +11,24 @@ room_mode = 144
 moving = ["pointing", "areaing", "totaling", "sweep", "mop", "curpointing", "selectroom", "remotectl", "tocharge"]
 spot = ["pointing", "curpointing"]
 
+[states.names]
+idle = "idle"
+pointing = "spot"
+areaing = "area"
+totaling = "full"
+sweep = "vacuuming"
+mop = "mopping"
+fault = "fault"
+pause = "paused"
+chargring = "charging"
+tocharge = "returning"
+fullcharge = "charged"
+remotectl = "remote_control"
+dormant = "sleeping"
+curpointing = "spot_here"
+selectroom = "rooms"
+dustcenterworking = "emptying"
+
 [cells]
 wall = 0
 unknown = 127

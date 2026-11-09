@@ -23,6 +23,7 @@ class DataPoints:
 class States:
     moving: frozenset[str]
     spot: frozenset[str]
+    names: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -110,6 +111,13 @@ def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     return merged
 
 
+def _state_names(names: dict[str, Any]) -> dict[str, str]:
+    wrong = sorted(code for code, name in names.items() if not isinstance(name, str))
+    if wrong:
+        raise ValueError(f"the state names of {', '.join(wrong)} are not text")
+    return dict(names)
+
+
 def _build(data: dict[str, Any]) -> Profile:
     states = data["states"]
     levels = data.get("levels", {})
@@ -117,7 +125,11 @@ def _build(data: dict[str, Any]) -> Profile:
         name=data["name"],
         description=data.get("description", ""),
         data_points=DataPoints(**data["data_points"]),
-        states=States(moving=frozenset(states["moving"]), spot=frozenset(states.get("spot", []))),
+        states=States(
+            moving=frozenset(states["moving"]),
+            spot=frozenset(states.get("spot", [])),
+            names=_state_names(states.get("names", {})),
+        ),
         cells=CellCodes(**data["cells"]),
         geometry=Geometry(**data["geometry"]),
         levels=Levels(

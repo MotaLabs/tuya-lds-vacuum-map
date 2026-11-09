@@ -179,8 +179,8 @@ connection, the MQTT connection and the cloud project are shared.
 ### Robot profiles
 
 What differs between robots lives in a profile, not in the code: the data point numbers, which states mean
-the robot is moving or cleaning a spot, the cell codes of the cloud map, the cleaning width and spot size,
-and the suction and water levels. The built-in `lds-robot` profile is in
+the robot is moving or cleaning a spot, which text names each state, the cell codes of the cloud map, the
+cleaning width and spot size, and the suction and water levels. The built-in `lds-robot` profile is in
 [profiles/lds_robot.toml](src/tuya_lds_vacuum_map/profiles/lds_robot.toml).
 
 A robot that differs in a few values does not need a full copy. A profile can extend another one and
@@ -206,7 +206,7 @@ The service creates, through MQTT discovery:
 
 | Entity | What it is |
 |---|---|
-| `camera.<device>_map` | The map, with `calibration_points`, `robot_state`, `robot_position`, `map_source` and `rooms` (id, name, color) attributes; the position changes as the robot moves, so a card that redraws when the camera changes follows it |
+| `camera.<device>_map` | The map, with `calibration_points`, `robot_state` (the robot's own code), `robot_state_name` (its text in the service's language, such as "Emptying the bin"), `robot_position`, `map_source` and `rooms` (id, name, color) attributes; the position changes as the robot moves, so a card that redraws when the camera changes follows it |
 | `select.<device>_map_source` | `Automatic` or `Local only` |
 | `select.<device>_room_settings` | The room picked by a double tap, or `None` |
 | `text.<device>_room_color` | The picked room's color as `#rrggbb`; write a new one to change it |

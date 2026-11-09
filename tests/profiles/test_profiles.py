@@ -236,3 +236,11 @@ def test_an_unreadable_profile_file_is_a_profile_error(tmp_path, content, reason
     path.write_bytes(content)
     with pytest.raises(ProfileError, match=reason):
         load_profile(str(path))
+
+
+@pytest.mark.parametrize("key", ["high", "1.5", ""])
+def test_a_water_level_key_must_be_a_whole_number(tmp_path, key):
+    path = tmp_path / "robot.toml"
+    path.write_text(f'extends = "lds-robot"\nname = "custom"\n[levels.water]\n"{key}" = "high"\n')
+    with pytest.raises(ProfileError, match=f"levels.water keys must be whole numbers, not '{key}'"):
+        load_profile(str(path))

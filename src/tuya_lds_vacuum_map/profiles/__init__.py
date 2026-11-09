@@ -159,6 +159,16 @@ def _names(table: dict[str, Any], kind: str) -> dict[str, str]:
     return dict(table)
 
 
+def _water_levels(names: dict[str, str]) -> dict[int, str]:
+    levels = {}
+    for key, name in names.items():
+        try:
+            levels[int(key)] = name
+        except ValueError:
+            raise ValueError(f"levels.water keys must be whole numbers, not {key!r}") from None
+    return levels
+
+
 def _build(data: dict[str, Any]) -> Profile:
     states = _table(data["states"], "states")
     levels = _table(data.get("levels", {}), "levels")
@@ -177,7 +187,7 @@ def _build(data: dict[str, Any]) -> Profile:
         geometry=_numbers(Geometry, data["geometry"], "geometry"),
         levels=Levels(
             fan=_names(_table(levels.get("fan", {}), "levels.fan"), "fan level"),
-            water={int(key): value for key, value in water.items()},
+            water=_water_levels(water),
         ),
         units=Units(**{key: _text(value, f"units.{key}") for key, value in units.items()}),
     )

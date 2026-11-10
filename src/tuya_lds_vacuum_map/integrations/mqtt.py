@@ -75,6 +75,22 @@ class Topics:
     def start_delay_set(self) -> str:
         return f"{self.base}/start_delay/set"
 
+    @property
+    def room_tap(self) -> str:
+        return f"{self.base}/room_tap"
+
+    @property
+    def room_tap_set(self) -> str:
+        return f"{self.base}/room_tap/set"
+
+    @property
+    def start(self) -> str:
+        return f"{self.base}/start"
+
+    @property
+    def clear(self) -> str:
+        return f"{self.base}/clear"
+
     def statistic(self, name: str) -> str:
         return f"{self.base}/statistics/{name}"
 
@@ -88,6 +104,9 @@ class Topics:
             self.room_color_random,
             self.auto_start_set,
             self.start_delay_set,
+            self.room_tap_set,
+            self.start,
+            self.clear,
         )
 
 
@@ -107,6 +126,7 @@ def discovery_configs(
     names: dict[str, str],
     source_options: list[str],
     room_options: list[str],
+    room_tap_options: list[str],
     start_delay_range: tuple[float, float],
 ) -> dict[str, dict[str, Any]]:
     common = {"availability_topic": availability, "device": device}
@@ -174,6 +194,30 @@ def discovery_configs(
             "unit_of_measurement": "s",
             "device_class": "duration",
             "entity_category": "config",
+        },
+        f"select/{unique_prefix}_room_tap": {
+            **common,
+            "name": names["room_tap"],
+            "unique_id": f"{unique_prefix}_room_tap",
+            "state_topic": topics.room_tap,
+            "command_topic": topics.room_tap_set,
+            "options": room_tap_options,
+            "entity_category": "config",
+            "icon": "mdi:gesture-tap",
+        },
+        f"button/{unique_prefix}_start": {
+            **common,
+            "name": names["start"],
+            "unique_id": f"{unique_prefix}_start",
+            "command_topic": topics.start,
+            "icon": "mdi:play",
+        },
+        f"button/{unique_prefix}_clear": {
+            **common,
+            "name": names["clear"],
+            "unique_id": f"{unique_prefix}_clear",
+            "command_topic": topics.clear,
+            "icon": "mdi:selection-remove",
         },
     }
 

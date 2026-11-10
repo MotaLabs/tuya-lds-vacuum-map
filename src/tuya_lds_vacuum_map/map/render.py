@@ -50,6 +50,7 @@ class Scene:
     spot: tuple[Point, ...] | None = None
     preview_square: tuple[Point, ...] | None = None
     preview_center: Point | None = None
+    room_order: dict[int, int] = field(default_factory=dict)
     show_settings: bool = False
     fan_labels: dict[str, str] = field(default_factory=dict)
     water_labels: dict[int, str] = field(default_factory=dict)
@@ -186,8 +187,19 @@ class _Painter:
         self.draw.text(
             (round(cx - width / 2), round(cy - height / 2 - box[1])), room.name, font=self.font, fill=(30, 30, 30, 255)
         )
+        if room.id in scene.room_order:
+            self.order(scene.room_order[room.id], left, cy)
         if scene.show_settings:
             self.settings(room, scene, cx, cy + height / 2 + 12)
+
+    def order(self, number: int, cx: float, cy: float) -> None:
+        text = str(number)
+        box = self.draw.textbbox((0, 0), text, font=self.small)
+        radius = max(10, (box[2] - box[0]) / 2 + 5)
+        ring = radius + 2
+        self.draw.ellipse((cx - ring, cy - ring, cx + ring, cy + ring), fill=(255, 255, 255, 240))
+        self.draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=self.style.preview)
+        self.draw.text((cx, cy), text, font=self.small, fill=(255, 255, 255, 255), anchor="mm")
 
     def settings(self, room: Room, scene: Scene, cx: float, top: float) -> None:
         parts = [

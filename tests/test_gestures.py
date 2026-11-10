@@ -8,6 +8,7 @@ from support.waiting import eventually
 from tuya_lds_vacuum_map.gestures import (
     START_DELAY_RANGE,
     DoubleTap,
+    RoomPicker,
     SpotPicker,
     SpotPreview,
     TapController,
@@ -20,11 +21,13 @@ from tuya_lds_vacuum_map.lds.codec import decode_raw
 from tuya_lds_vacuum_map.map.coverage import Coverage
 from tuya_lds_vacuum_map.map.model import MapModel
 from tuya_lds_vacuum_map.robot import Robot
+from tuya_lds_vacuum_map.storage import RoomTap
 
 WINDOW = 0.05
 EXPIRY = 0.2
 DELAY = 0.05
 LEFT = cell_center_mm(10, 14)
+RIGHT = cell_center_mm(30, 14)
 CATS = cell_center_mm(26, 7)
 
 
@@ -50,8 +53,12 @@ class Setup:
         self.selected = []
         self.changes = 0
         self.delay: float | None = None
+        self.room_tap = RoomTap.CLEAN
         self.spots = SpotPicker(self.robot, self.sender, 1500, lambda: self.delay, EXPIRY, self.changed)
-        self.taps = TapController(self.robot, self.map, self.sender, self.select, WINDOW, self.spots)
+        self.rooms = RoomPicker(self.sender, lambda: self.delay, self.changed)
+        self.taps = TapController(
+            self.robot, self.map, self.sender, self.select, WINDOW, self.spots, self.rooms, lambda: self.room_tap
+        )
 
     async def select(self, room) -> None:
         self.selected.append(room)
@@ -315,3 +322,276 @@ async def test_a_command_that_times_out_is_logged(caplog):
     setup = Setup(rooms_message(), cloud_payload(), FakeSender(TimeoutError()))
     await setup.taps.tap(TapMode.ROOM, *LEFT)
     await eventually(lambda: "cleaning command failed: TimeoutError" in caplog.text)
+
+
+def segments(setup: Setup) -> list[list[int]]:
+    return [cmds[0]["data"]["segmentId"] for cmds in setup.targets()]
+
+
+@pytest.fixture
+def listing(setup) -> Setup:
+    setup.room_tap = RoomTap.LIST
+    return setup
+
+
+async def tap_room(setup: Setup, point: tuple[int, int]) -> None:
+    changes = setup.changes
+    await setup.taps.tap(TapMode.ROOM, *point)
+    await eventually(lambda: setup.changes > changes)
+
+
+async def test_a_room_tap_adds_the_room_to_the_list_after_the_window(listing):
+    await listing.taps.tap(TapMode.ROOM, *LEFT)
+    assert listing.rooms.ids == []
+    await eventually(lambda: listing.rooms.ids == [1])
+    assert listing.changes == 1
+    await asyncio.sleep(WINDOW * 3)
+    assert listing.sender.sent == []
+
+
+async def test_a_tap_on_a_listed_room_takes_it_out(listing):
+    await tap_room(listing, LEFT)
+    await tap_room(listing, RIGHT)
+    assert listing.rooms.ids == [1, 2]
+    await tap_room(listing, LEFT)
+    assert listing.rooms.ids == [2]
+    assert listing.changes == 3
+    assert listing.sender.sent == []
+
+
+async def test_the_list_is_sent_in_the_order_tapped(listing):
+    await tap_room(listing, RIGHT)
+    await tap_room(listing, LEFT)
+    await listing.taps.start()
+    assert segments(listing) == [[2, 1]]
+    assert listing.targets()[0][0]["data"]["mapId"] == 42
+    assert listing.rooms.ids == []
+    assert listing.changes == 3
+
+
+async def test_a_list_starts_by_itself_after_the_delay(listing):
+    listing.delay = DELAY
+    await listing.taps.tap(TapMode.ROOM, *RIGHT)
+    await asyncio.sleep(WINDOW + DELAY / 2)
+    assert listing.sender.sent == []
+    await eventually(lambda: listing.sender.sent)
+    assert segments(listing) == [[2]]
+    assert listing.rooms.ids == []
+
+
+async def test_each_room_added_restarts_the_delay(listing):
+    listing.delay = DELAY * 4
+    await listing.taps.tap(TapMode.ROOM, *LEFT)
+    await asyncio.sleep(WINDOW + DELAY * 2)
+    await listing.taps.tap(TapMode.ROOM, *RIGHT)
+    await asyncio.sleep(WINDOW + DELAY * 3)
+    assert listing.sender.sent == []
+    await eventually(lambda: listing.sender.sent)
+    assert segments(listing) == [[1, 2]]
+
+
+async def test_emptying_the_list_stops_the_delay(listing):
+    listing.delay = DELAY * 4
+    await tap_room(listing, LEFT)
+    await tap_room(listing, LEFT)
+    await asyncio.sleep(DELAY * 6)
+    assert listing.sender.sent == []
+    assert listing.rooms.ids == []
+
+
+async def test_turning_the_automatic_start_off_keeps_the_list(listing):
+    listing.delay = DELAY * 4
+    await tap_room(listing, LEFT)
+    listing.delay = None
+    listing.rooms.reschedule()
+    await asyncio.sleep(DELAY * 6)
+    assert listing.sender.sent == []
+    assert listing.rooms.ids == [1]
+    listing.delay = DELAY
+    listing.rooms.reschedule()
+    await eventually(lambda: listing.sender.sent)
+    assert segments(listing) == [[1]]
+
+
+async def test_a_double_tap_leaves_the_list_as_it_is(listing):
+    await tap_room(listing, LEFT)
+    await listing.taps.tap(TapMode.ROOM, *RIGHT)
+    await listing.taps.tap(TapMode.ROOM, *RIGHT)
+    await asyncio.sleep(WINDOW * 3)
+    assert [room.name for room in listing.selected] == ["Right"]
+    assert listing.rooms.ids == [1]
+
+
+async def test_one_pick_at_a_time_a_list_or_a_spot(listing):
+    await tap_room(listing, LEFT)
+    await listing.taps.tap(TapMode.SPOT, 0, 0)
+    assert listing.rooms.ids == []
+    assert listing.spots.preview
+    await tap_room(listing, RIGHT)
+    assert listing.spots.preview is None
+    assert listing.rooms.ids == [2]
+    assert listing.sender.sent == []
+
+
+async def test_an_area_tap_cleans_the_areas_and_drops_the_list(listing):
+    await tap_room(listing, LEFT)
+    await listing.taps.tap(TapMode.ROOM, *CATS)
+    await eventually(lambda: listing.sender.sent)
+    [cmds] = listing.targets()
+    assert cmds[1]["data"] == {"cleanId": [-2], "extraAreas": [], "mapId": 42}
+    assert listing.rooms.ids == []
+
+
+async def test_start_without_a_list_starts_the_spot_preview(setup):
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    await setup.taps.start()
+    [cmds] = setup.targets()
+    assert cmds[0]["data"]["extraAreas"][0]["vertexs"] == [[-750, -750], [750, -750], [750, 750], [-750, 750]]
+    assert setup.spots.preview is None
+
+
+async def test_start_with_nothing_picked_sends_nothing(setup):
+    await setup.taps.start()
+    assert setup.sender.sent == []
+    assert setup.changes == 0
+
+
+async def test_clear_drops_the_list_and_the_preview(listing):
+    await tap_room(listing, LEFT)
+    listing.taps.clear()
+    assert listing.rooms.ids == []
+    await listing.taps.tap(TapMode.SPOT, 0, 0)
+    listing.taps.clear()
+    assert listing.spots.preview is None
+    assert listing.changes == 3
+    await listing.taps.start()
+    assert listing.sender.sent == []
+
+
+def test_a_room_of_another_map_starts_a_new_list():
+    rooms = RoomPicker(FakeSender(), lambda: None, lambda: None)
+    rooms.toggle(42, 1)
+    rooms.toggle(42, 2)
+    rooms.toggle(7, 2)
+    assert (rooms.map_id, rooms.ids) == (7, [2])
+
+
+async def test_a_list_that_fails_to_start_is_logged(caplog):
+    setup = Setup(rooms_message(), cloud_payload(), FakeSender(TimeoutError()))
+    setup.room_tap = RoomTap.LIST
+    setup.delay = DELAY
+    await setup.taps.tap(TapMode.ROOM, *LEFT)
+    await eventually(lambda: "cleaning command failed: TimeoutError" in caplog.text)
+    assert setup.rooms.ids == []
+
+
+async def test_a_tap_just_before_the_list_starts_joins_it(listing):
+    listing.delay = DELAY * 8
+    await listing.taps.tap(TapMode.ROOM, *LEFT)
+    await asyncio.sleep(WINDOW + DELAY * 7)
+    await listing.taps.tap(TapMode.ROOM, *RIGHT)
+    await eventually(lambda: listing.sender.sent)
+    await asyncio.sleep(DELAY * 10)
+    assert segments(listing) == [[1, 2]]
+
+
+async def test_two_rooms_tapped_inside_one_window_are_both_listed(listing):
+    await listing.taps.tap(TapMode.ROOM, *LEFT)
+    await listing.taps.tap(TapMode.ROOM, *RIGHT)
+    await eventually(lambda: listing.rooms.ids == [1, 2])
+
+
+async def test_start_takes_the_room_tapped_just_before(listing):
+    await tap_room(listing, LEFT)
+    await listing.taps.tap(TapMode.ROOM, *RIGHT)
+    await listing.taps.start()
+    await asyncio.sleep(WINDOW * 3)
+    assert segments(listing) == [[1, 2]]
+    assert listing.rooms.ids == []
+
+
+async def test_clear_drops_the_room_tapped_just_before(listing):
+    await tap_room(listing, LEFT)
+    listing.delay = DELAY
+    await listing.taps.tap(TapMode.ROOM, *RIGHT)
+    listing.taps.clear()
+    await asyncio.sleep(WINDOW + DELAY * 3)
+    assert listing.rooms.ids == []
+    assert listing.sender.sent == []
+
+
+async def test_a_room_tapped_before_the_choice_turns_to_clean_is_not_listed(listing):
+    await listing.taps.tap(TapMode.ROOM, *LEFT)
+    listing.room_tap = RoomTap.CLEAN
+    await asyncio.sleep(WINDOW * 3)
+    assert listing.rooms.ids == []
+    assert listing.sender.sent == []
+
+
+async def test_a_double_tap_restarts_the_delay_of_the_list(listing):
+    listing.delay = DELAY * 4
+    await listing.taps.tap(TapMode.ROOM, *LEFT)
+    await asyncio.sleep(WINDOW + DELAY * 3)
+    await listing.taps.tap(TapMode.ROOM, *RIGHT)
+    await listing.taps.tap(TapMode.ROOM, *RIGHT)
+    await asyncio.sleep(DELAY * 2)
+    assert listing.sender.sent == []
+    await eventually(lambda: listing.sender.sent)
+    assert segments(listing) == [[1]]
+
+
+async def test_an_area_tap_just_before_the_list_starts_sends_only_the_areas(listing):
+    listing.delay = DELAY * 8
+    await listing.taps.tap(TapMode.ROOM, *LEFT)
+    await asyncio.sleep(WINDOW + DELAY * 7)
+    await listing.taps.tap(TapMode.ROOM, *CATS)
+    await eventually(lambda: listing.sender.sent)
+    await asyncio.sleep(DELAY * 10)
+    [cmds] = listing.targets()
+    assert cmds[1]["data"] == {"cleanId": [-2], "extraAreas": [], "mapId": 42}
+    assert listing.rooms.ids == []
+
+
+async def test_a_room_listed_just_before_the_spot_starts_drops_the_spot(listing):
+    listing.delay = DELAY * 8
+    await listing.taps.tap(TapMode.SPOT, 0, 0)
+    await asyncio.sleep(DELAY * 7)
+    await listing.taps.tap(TapMode.ROOM, *LEFT)
+    await eventually(lambda: listing.rooms.ids == [1])
+    await asyncio.sleep(DELAY * 2)
+    assert listing.sender.sent == []
+    assert listing.spots.preview is None
+
+
+async def test_a_setting_changed_while_a_tap_waits_leaves_the_list_held(listing):
+    await tap_room(listing, LEFT)
+    listing.taps.double_tap.window = DELAY * 4
+    listing.delay = DELAY
+    await listing.taps.tap(TapMode.ROOM, *RIGHT)
+    listing.taps.reschedule()
+    await asyncio.sleep(DELAY * 2)
+    assert listing.sender.sent == []
+    await eventually(lambda: listing.sender.sent)
+    assert segments(listing) == [[1, 2]]
+
+
+async def test_a_spot_held_by_a_tap_that_lists_nothing_starts_again(listing):
+    listing.delay = DELAY * 4
+    await listing.taps.tap(TapMode.SPOT, 0, 0)
+    await listing.taps.tap(TapMode.ROOM, *LEFT)
+    listing.room_tap = RoomTap.CLEAN
+    await asyncio.sleep(WINDOW * 2)
+    assert listing.spots.preview
+    await eventually(lambda: listing.sender.sent)
+    assert listing.targets()[0][0]["data"]["extraAreas"]
+
+
+async def test_a_spot_preview_starts_after_a_double_tap(setup):
+    setup.delay = DELAY * 4
+    await setup.taps.tap(TapMode.SPOT, 0, 0)
+    await setup.taps.tap(TapMode.ROOM, *LEFT)
+    await setup.taps.tap(TapMode.ROOM, *LEFT)
+    assert [room.name for room in setup.selected] == ["Left"]
+    await eventually(lambda: setup.sender.sent)
+    assert setup.targets()[0][0]["data"]["extraAreas"]
+    assert setup.spots.preview is None

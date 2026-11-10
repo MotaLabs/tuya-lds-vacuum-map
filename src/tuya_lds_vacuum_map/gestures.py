@@ -3,6 +3,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
+from functools import partial
 from typing import Protocol
 
 from .integrations.homeassistant import HomeAssistantError
@@ -11,6 +12,7 @@ from .lds.messages import Point, Room
 from .map.hit import area_at, room_at
 from .map.model import MapModel
 from .robot import Robot
+from .storage import RoomTap
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +91,9 @@ class SpotPicker:
         self.preview = SpotPreview(map_id, (x, y), self.size_mm)
         self.reschedule()
 
+    def hold(self) -> None:
+        self._cancel_timer()
+
     def reschedule(self) -> None:
         self._cancel_timer()
         if self.preview is None:
@@ -101,6 +106,10 @@ class SpotPicker:
         if self.preview:
             self.preview = None
             self.on_change()
+
+    async def start(self) -> None:
+        if self.preview:
+            await self._start(self.preview)
 
     async def _start(self, preview: SpotPreview) -> None:
         self.preview = None
@@ -118,6 +127,58 @@ class SpotPicker:
         await asyncio.sleep(self.expiry)
         self._timer = None
         self.clear()
+
+    def _cancel_timer(self) -> None:
+        if self._timer and not self._timer.done():
+            self._timer.cancel()
+        self._timer = None
+
+
+class RoomPicker:
+    def __init__(self, sender: Sender, auto_start: Callable[[], float | None], on_change: Callable[[], None]) -> None:
+        self.sender = sender
+        self.auto_start = auto_start
+        self.on_change = on_change
+        self.map_id: int | None = None
+        self.ids: list[int] = []
+        self._timer: asyncio.Task | None = None
+
+    def toggle(self, map_id: int, room_id: int) -> None:
+        if map_id != self.map_id:
+            self.map_id, self.ids = map_id, []
+        if room_id in self.ids:
+            self.ids.remove(room_id)
+        else:
+            self.ids.append(room_id)
+        self.reschedule()
+        self.on_change()
+
+    def hold(self) -> None:
+        self._cancel_timer()
+
+    def reschedule(self) -> None:
+        self._cancel_timer()
+        delay = self.auto_start()
+        if self.ids and delay is not None:
+            self._timer = asyncio.create_task(self._start_after(delay))
+
+    def clear(self) -> None:
+        self._cancel_timer()
+        if self.ids:
+            self.ids = []
+            self.on_change()
+
+    async def start(self) -> None:
+        if self.map_id is None or not self.ids:
+            return
+        command = commands.clean_rooms(self.map_id, self.ids)
+        self.clear()
+        await send_or_log(self.sender, command)
+
+    async def _start_after(self, delay: float) -> None:
+        await asyncio.sleep(delay)
+        self._timer = None
+        await self.start()
 
     def _cancel_timer(self) -> None:
         if self._timer and not self._timer.done():
@@ -147,6 +208,8 @@ class TapController:
         on_room_selected: Callable[[Room], Awaitable[None]],
         double_tap_seconds: float,
         spots: SpotPicker,
+        rooms: RoomPicker,
+        room_tap: Callable[[], RoomTap],
     ) -> None:
         self.robot = robot
         self.map = map_model
@@ -154,7 +217,11 @@ class TapController:
         self.on_room_selected = on_room_selected
         self.double_tap = DoubleTap(double_tap_seconds)
         self.spots = spots
+        self.rooms = rooms
+        self.room_tap = room_tap
         self._pending: asyncio.Task | None = None
+        self._then: Callable[[], Awaitable[None]] | None = None
+        self._picking = False
 
     def map_id(self) -> int | None:
         if self.robot.rooms and self.robot.rooms.map_id is not None:
@@ -167,31 +234,74 @@ class TapController:
             log.warning("tap ignored: no map id known yet")
             return
         if mode is TapMode.SPOT:
-            self._cancel_pending()
+            self._drop_waiting()
+            self.rooms.clear()
             await self.spots.tap(map_id, x, y)
             return
         rooms = self.robot.rooms
         room = room_at(self.map.view, rooms.rooms if rooms else (), x, y)
         if self.double_tap.tap(asyncio.get_running_loop().time(), room.id if room else None):
-            self._cancel_pending()
+            self._drop_waiting()
+            self.reschedule()
             await self.on_room_selected(room)
             return
         area = area_at(rooms.areas if rooms else (), x, y)
         if area is not None and rooms is not None:
-            command = commands.clean_areas(map_id, rooms.raw_areas)
+            self._wait(partial(self._send, commands.clean_areas(map_id, rooms.raw_areas)))
+        elif room is not None and self.room_tap() is RoomTap.LIST:
+            if self._picking:
+                await self._settle()
+            self._wait(partial(self._pick, map_id, room.id), picking=True)
         elif room is not None:
-            command = commands.clean_rooms(map_id, [room.id])
-        else:
-            return
-        self._cancel_pending()
-        self._pending = asyncio.create_task(self._send_after_window(command))
+            self._wait(partial(self._send, commands.clean_rooms(map_id, [room.id])))
 
-    async def _send_after_window(self, command: str) -> None:
-        await asyncio.sleep(self.double_tap.window)
+    async def start(self) -> None:
+        await self._settle()
+        if self.rooms.ids:
+            await self.rooms.start()
+        else:
+            await self.spots.start()
+
+    def clear(self) -> None:
+        self._drop_waiting()
         self.spots.clear()
+        self.rooms.clear()
+
+    def reschedule(self) -> None:
+        if self._then is None:
+            self.spots.reschedule()
+            self.rooms.reschedule()
+
+    def _wait(self, then: Callable[[], Awaitable[None]], picking: bool = False) -> None:
+        self._drop_waiting()
+        self.spots.hold()
+        self.rooms.hold()
+        self._then, self._picking = then, picking
+        self._pending = asyncio.create_task(self._after_window())
+
+    async def _after_window(self) -> None:
+        await asyncio.sleep(self.double_tap.window)
+        self._pending = None
+        await self._settle()
+
+    async def _settle(self) -> None:
+        then = self._then
+        self._drop_waiting()
+        if then:
+            await then()
+
+    async def _send(self, command: str) -> None:
+        self.clear()
         await send_or_log(self.sender, command)
 
-    def _cancel_pending(self) -> None:
+    async def _pick(self, map_id: int, room_id: int) -> None:
+        if self.room_tap() is not RoomTap.LIST:
+            self.reschedule()
+            return
+        self.spots.clear()
+        self.rooms.toggle(map_id, room_id)
+
+    def _drop_waiting(self) -> None:
         if self._pending and not self._pending.done():
             self._pending.cancel()
-        self._pending = None
+        self._pending, self._then, self._picking = None, None, False

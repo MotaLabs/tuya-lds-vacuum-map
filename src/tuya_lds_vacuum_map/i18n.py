@@ -25,6 +25,11 @@ class Texts:
     no_room: str
     auto_start: str
     start_delay: str
+    room_tap: str
+    room_tap_clean: str
+    room_tap_list: str
+    start: str
+    clear: str
     clean_time: str
     clean_area: str
     total_time: str

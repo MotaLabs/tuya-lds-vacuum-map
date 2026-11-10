@@ -22,7 +22,7 @@ the map into cleaning commands sent over the local network.
 | Done | Per-room suction and water icons | Shown while per-room settings are on |
 | Done | Room colors | Random for each new room, kept across restarts, editable from Home Assistant |
 | Done | Areas and no-go zones | Read from the robot; edit them in the app and the map follows |
-| Done | Tap a room to clean it | Local command, no cloud |
+| Done | Tap rooms to clean them in the order tapped | By default a tap adds the room to a list, numbered on the map, that starts after a delay or from a button; a select turns a tap back into cleaning that room at once. Local command, no cloud. The list, its automatic start and the buttons have not been tried on a robot yet, nor whether the robot keeps the order |
 | Done | Tap an area to clean it | Uses the areas as they are on the robot |
 | Done | Double tap a room to open its settings | Selects the room on a Home Assistant select and fires an event |
 | Done | Spot cleaning | A tap shows the 1.5 m square around the point; a tap inside it, or the automatic start after a delay, sends the robot, and the square stays on the map with its path while it works. The preview and the automatic start have not been tried on a robot yet |
@@ -30,7 +30,7 @@ the map into cleaning commands sent over the local network.
 | Done | English and Brazilian Portuguese | Entity names and map labels |
 | Done | Cleaning statistics | Time and area of the cleaning in progress or the last one, and the totals: time, area and number of cleanings |
 | Done | Several robots in one instance | Each robot gets its own device, map, topics and saved state; so far only one robot has run it |
-| Planned | Clean several rooms or points in the order tapped | Tap modes with a list and a start that waits for the last tap ([#4](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/4), [#5](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/5)) |
+| Planned | Clean several points in the order tapped | A list of spots, like the list of rooms ([#4](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/4), [#5](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/5)) |
 | Planned | Draw an area and clean it | Needs the app's zone command captured ([#7](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/7)) |
 | Planned | Clean one area when the robot has several | Today a tap on an area cleans all of the robot's areas ([#8](https://github.com/MotaLabs/tuya-lds-vacuum-map/issues/8)) |
 | Planned | Room settings, parts and warnings from the service | Today they need Home Assistant helpers, templates and automations ([milestone 0.4](https://github.com/MotaLabs/tuya-lds-vacuum-map/milestone/3)) |
@@ -172,7 +172,7 @@ connection, the MQTT connection and the cloud project are shared.
 | `CLOUD_REFRESH_SECONDS` | | `60` | How often the cloud map is fetched while the robot moves |
 | `CLOUD_IDLE_REFRESH_SECONDS` | | `21600` | How often the cloud map is fetched while the robot is still |
 | `CLOUD_AFTER_CLEANING_SECONDS` | | `20` | Wait after a cleaning ends before fetching the final map |
-| `DOUBLE_TAP_SECONDS` | | `0.6` | Window for a double tap; a single tap waits this long before cleaning |
+| `DOUBLE_TAP_SECONDS` | | `0.6` | Window for a double tap; a single tap on a room waits this long before it cleans or lists the room |
 | `SPOT_PREVIEW_SECONDS` | | `120` | With the automatic start off, how long a spot preview waits for a tap inside it |
 | `RENDER_INTERVAL_SECONDS` | | `1.5` | Shortest time between two map images |
 | `SAVE_INTERVAL_SECONDS` | | `30` | How often the state in `DATA_DIR` is written |
@@ -214,8 +214,11 @@ The service creates, through MQTT discovery:
 | `select.<device>_room_settings` | The room picked by a double tap, or `None` |
 | `text.<device>_room_color` | The picked room's color as `#rrggbb`; write a new one to change it |
 | `button.<device>_random_room_color` | Gives the picked room a new random color |
-| `switch.<device>_automatic_start` | On: a spot preview starts by itself after the start delay. Off: only a tap inside it starts it |
-| `number.<device>_start_delay` | Seconds with no tap before a spot preview starts by itself, from 1 to 300 |
+| `select.<device>_room_tap` | What a tap on a room does: `Clean the room` at once, or `Add it to a list` (the default) |
+| `button.<device>_start_selection` | Starts the list of rooms, or the spot preview when there is no list |
+| `button.<device>_clear_selection` | Drops the list of rooms and the spot preview |
+| `switch.<device>_automatic_start` | On: a list of rooms or a spot preview starts by itself after the start delay. Off: only the start button, or a tap inside the spot preview, starts it |
+| `number.<device>_start_delay` | Seconds with no tap before a list of rooms or a spot preview starts by itself, from 1 to 300 |
 | `sensor.<device>_cleaning_time`, `sensor.<device>_cleaned_area` | Time and area of the cleaning in progress, or of the last one once it ends |
 | `sensor.<device>_total_cleaning_time`, `sensor.<device>_total_cleaned_area`, `sensor.<device>_number_of_cleanings` | The robot's totals, as diagnostic sensors with the `total_increasing` state class |
 
@@ -235,7 +238,7 @@ map_source:
 calibration_source:
   camera: true
 map_modes:
-  - name: Tap to clean, double tap for settings
+  - name: Rooms, double tap for settings
     icon: mdi:gesture-tap
     selection_type: MANUAL_POINT
     coordinates_rounding: true
@@ -257,10 +260,19 @@ map_modes:
         payload: '{"mode": "spot", "x": [[point_x]], "y": [[point_y]]}'
 ```
 
+In the room mode, `select.<device>_room_tap` decides what a tap does. With `Add it to a list`, the room gets
+the next number on the map and a second tap on it takes it out; the list starts in that order once no tap came
+for the start delay, or from the start button. With `Clean the room`, the robot leaves for that room alone.
+Either way a tap waits the double-tap window first, so a double tap opens the room's settings and leaves the
+list as it is; the start delay counts from the last tap. A tap on an area cleans the areas at once and drops the list.
+
 In the spot mode every tap reaches the service at once. The first one draws the square the robot would clean
 and the point at its center; a tap inside the square starts the clean, a tap outside moves it. With the
 automatic start on, the robot also leaves by itself once no tap came for the start delay. The square shows
 after the round trip from the card to the service and back, about 1 to 3 s.
+
+One pick waits at a time: a spot tap drops the list of rooms, and a room added to the list drops the spot
+preview.
 
 To show a room's settings below the map after a double tap, use a `conditional` card on
 `select.<device>_room_settings` for each room. The room color entities act on the same picked room, so they

@@ -12,6 +12,11 @@ class MapSource(StrEnum):
     LOCAL = "local"
 
 
+class RoomTap(StrEnum):
+    CLEAN = "clean"
+    LIST = "list"
+
+
 @dataclass
 class Snapshot:
     room_message: dict[str, Any] | None = None
@@ -24,6 +29,7 @@ class Snapshot:
     room_colors: dict[str, str] = field(default_factory=dict)
     auto_start: bool = True
     start_delay: float = 10.0
+    room_tap: RoomTap = RoomTap.LIST
 
 
 class Storage:
@@ -37,6 +43,7 @@ class Storage:
         known = {f.name for f in fields(Snapshot)}
         snapshot = Snapshot(**{key: value for key, value in data.items() if key in known})
         snapshot.source = MapSource(snapshot.source) if snapshot.source in tuple(MapSource) else MapSource.AUTO
+        snapshot.room_tap = RoomTap(snapshot.room_tap) if snapshot.room_tap in tuple(RoomTap) else RoomTap.LIST
         return snapshot
 
     def save(self, snapshot: Snapshot) -> None:

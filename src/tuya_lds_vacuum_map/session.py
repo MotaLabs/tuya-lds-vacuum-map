@@ -7,7 +7,7 @@ from typing import Any
 
 from .cloud_sync import CloudMapSync
 from .config import RobotSettings, Settings
-from .gestures import START_DELAY_RANGE, SpotPicker, TapController, TapMode, start_delay
+from .gestures import START_DELAY_RANGE, RoomPicker, SpotPicker, TapController, TapMode, start_delay
 from .i18n import Texts
 from .integrations.homeassistant import HomeAssistant, HomeAssistantError
 from .integrations.localtuya import LocalTuyaLink
@@ -20,7 +20,7 @@ from .map.model import MapModel
 from .map.render import Renderer, Scene, Style
 from .profiles import Profile
 from .robot import STATISTICS, Robot
-from .storage import MapSource, Snapshot, Storage
+from .storage import MapSource, RoomTap, Snapshot, Storage
 
 log = logging.getLogger(__name__)
 
@@ -62,8 +62,16 @@ class RobotSession:
         self.spots = SpotPicker(
             self.robot, link, geometry.spot_size_mm, self.auto_start_delay, settings.timing.spot_preview, self.dirty.set
         )
+        self.rooms = RoomPicker(link, self.auto_start_delay, self.dirty.set)
         self.taps = TapController(
-            self.robot, self.map, link, self.open_room_settings, settings.timing.double_tap, self.spots
+            self.robot,
+            self.map,
+            link,
+            self.open_room_settings,
+            settings.timing.double_tap,
+            self.spots,
+            self.rooms,
+            lambda: self.snapshot.room_tap,
         )
         self.cloud_sync = (
             CloudMapSync(
@@ -81,6 +89,7 @@ class RobotSession:
         self.fan_labels = {value: levels.get(level, value) for value, level in profile.levels.fan.items()}
         self.water_labels = {value: levels.get(level, str(value)) for value, level in profile.levels.water.items()}
         self.state_labels = {code: self.texts.states.get(name, code) for code, name in profile.states.names.items()}
+        self.room_tap_labels = {RoomTap.CLEAN: self.texts.room_tap_clean, RoomTap.LIST: self.texts.room_tap_list}
         self.unsaved = False
         self.rng = random.Random()
         self.room_colors = _load_colors(self.snapshot.room_colors)
@@ -155,6 +164,16 @@ class RobotSession:
             elif topic == topics.start_delay_set:
                 self.snapshot.start_delay = start_delay(payload)
                 await self.start_settings_changed()
+            elif topic == topics.room_tap_set:
+                self.snapshot.room_tap = {label: tap for tap, label in self.room_tap_labels.items()}[payload]
+                if self.snapshot.room_tap is not RoomTap.LIST:
+                    self.rooms.clear()
+                self.unsaved = True
+                await self.publish_states()
+            elif topic == topics.start:
+                await self.taps.start()
+            elif topic == topics.clear:
+                self.taps.clear()
         except (ValueError, KeyError, TypeError, HomeAssistantError) as error:
             log.warning("%s: could not handle %s: %s", self.label, topic, error)
 
@@ -163,7 +182,7 @@ class RobotSession:
 
     async def start_settings_changed(self) -> None:
         self.unsaved = True
-        self.spots.reschedule()
+        self.taps.reschedule()
         await self.publish_states()
 
     def color_new_rooms(self) -> None:
@@ -218,9 +237,13 @@ class RobotSession:
                 "random_room_color": texts.random_room_color,
                 "auto_start": texts.auto_start,
                 "start_delay": texts.start_delay,
+                "room_tap": texts.room_tap,
+                "start": texts.start,
+                "clear": texts.clear,
             },
             [texts.source_auto, texts.source_local],
             [texts.no_room, *(self.robot.rooms.names if self.robot.rooms else [])],
+            list(self.room_tap_labels.values()),
             START_DELAY_RANGE,
         )
         configs |= statistic_configs(
@@ -244,6 +267,7 @@ class RobotSession:
         await self.mqtt.publish(topics.room_color, format_color(color) if color else "")
         await self.mqtt.publish(topics.auto_start, "ON" if self.snapshot.auto_start else "OFF")
         await self.mqtt.publish(topics.start_delay, f"{self.snapshot.start_delay:g}")
+        await self.mqtt.publish(topics.room_tap, self.room_tap_labels[self.snapshot.room_tap])
         await self.publish_statistics(sorted(self.robot.statistics))
 
     async def publish_statistics(self, names: list[str]) -> None:
@@ -266,6 +290,7 @@ class RobotSession:
             spot=self.robot.spot,
             preview_square=preview.square if preview else None,
             preview_center=preview.center if preview else None,
+            room_order={room_id: order for order, room_id in enumerate(self.rooms.ids, 1)},
             show_settings=bool(self.robot.room_mode),
             fan_labels=self.fan_labels,
             water_labels=self.water_labels,
@@ -322,6 +347,7 @@ class RobotSession:
                     room_colors={str(room_id): format_color(color) for room_id, color in self.room_colors.items()},
                     auto_start=self.snapshot.auto_start,
                     start_delay=self.snapshot.start_delay,
+                    room_tap=self.snapshot.room_tap,
                 )
             )
         except Exception as error:

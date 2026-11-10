@@ -194,6 +194,20 @@ def test_settings_pills_follow_the_switch(payload):
     assert unlabeled.tobytes() == hidden.tobytes()
 
 
+def test_a_listed_room_shows_its_place_in_the_list(payload):
+    grid = GridMap.from_cloud(payload)
+    rooms = (Room(1, "Left", pos=cell_center_mm(10, 14)),)
+    plain = render(Scene(grid, rooms=rooms))
+    second = render(Scene(grid, rooms=rooms, room_order={1: 2}))
+    third = render(Scene(grid, rooms=rooms, room_order={1: 3}))
+    _, y = to_map(calibration(grid, SCALE), *cell_center_mm(10, 14))
+    marked = [x for x in range(WIDTH * SCALE) if second.getpixel((x, y)) == STYLE.preview[:3]]
+    assert marked
+    assert all(plain.getpixel((x, y)) != STYLE.preview[:3] for x in marked)
+    assert second.tobytes() != third.tobytes()
+    assert render(Scene(grid, rooms=rooms, room_order={2: 1})).tobytes() == plain.tobytes()
+
+
 def test_room_names_are_drawn(payload):
     grid = GridMap.from_cloud(payload)
     named = render(Scene(grid, rooms=(Room(1, "Left", pos=cell_center_mm(10, 14)),)))

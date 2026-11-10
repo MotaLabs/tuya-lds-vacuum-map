@@ -41,8 +41,12 @@ def test_topics():
         "maps/dev/room_color/random",
         "maps/dev/auto_start/set",
         "maps/dev/start_delay/set",
+        "maps/dev/room_tap/set",
+        "maps/dev/start",
+        "maps/dev/clear",
     )
     assert (TOPICS.auto_start, TOPICS.start_delay) == ("maps/dev/auto_start", "maps/dev/start_delay")
+    assert TOPICS.room_tap == "maps/dev/room_tap"
 
 
 def test_discovery_configs():
@@ -59,20 +63,38 @@ def test_discovery_configs():
             "random_room_color": "Dice",
             "auto_start": "Auto start",
             "start_delay": "Delay",
+            "room_tap": "Tap",
+            "start": "Go",
+            "clear": "Drop",
         },
         ["Auto", "Local"],
         ["None", "Left"],
+        ["Clean", "List"],
         (1.0, 300.0),
     )
     assert sorted(configs) == [
+        "button/tlvm_dev_clear",
         "button/tlvm_dev_random_room_color",
+        "button/tlvm_dev_start",
         "camera/tlvm_dev_map",
         "number/tlvm_dev_start_delay",
         "select/tlvm_dev_map_source",
         "select/tlvm_dev_room_settings",
+        "select/tlvm_dev_room_tap",
         "switch/tlvm_dev_auto_start",
         "text/tlvm_dev_room_color",
     ]
+    tap = configs["select/tlvm_dev_room_tap"]
+    assert (tap["name"], tap["state_topic"], tap["command_topic"], tap["options"], tap["entity_category"]) == (
+        "Tap",
+        TOPICS.room_tap,
+        TOPICS.room_tap_set,
+        ["Clean", "List"],
+        "config",
+    )
+    start, clear = configs["button/tlvm_dev_start"], configs["button/tlvm_dev_clear"]
+    assert (start["name"], start["command_topic"], start["unique_id"]) == ("Go", TOPICS.start, "tlvm_dev_start")
+    assert (clear["name"], clear["command_topic"], clear["unique_id"]) == ("Drop", TOPICS.clear, "tlvm_dev_clear")
     switch = configs["switch/tlvm_dev_auto_start"]
     assert (switch["name"], switch["state_topic"], switch["command_topic"]) == (
         "Auto start",

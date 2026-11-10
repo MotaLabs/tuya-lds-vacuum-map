@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from tuya_lds_vacuum_map.storage import MapSource, Snapshot, Storage
+from tuya_lds_vacuum_map.storage import MapSource, RoomTap, Snapshot, Storage
 
 
 def test_missing_file_gives_defaults(tmp_path):
@@ -18,6 +18,7 @@ def test_snapshot_round_trip(tmp_path):
         source=MapSource.LOCAL,
         selected_room="Suíte",
         coverage=[1, 2, 3, 4],
+        room_tap=RoomTap.CLEAN,
     )
     storage.save(snapshot)
     assert storage.load() == snapshot
@@ -30,6 +31,20 @@ def test_unknown_keys_and_sources_are_ignored(tmp_path):
     snapshot = Storage(path).load()
     assert snapshot.robot_state == "idle"
     assert snapshot.source is MapSource.AUTO
+
+
+@pytest.mark.parametrize("saved", ["points", "", None, 1, ["clean"], {"list": 1}])
+def test_an_unknown_room_tap_falls_back_to_the_list(tmp_path, saved):
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps({"room_tap": saved}))
+    assert Storage(path).load().room_tap is RoomTap.LIST
+
+
+def test_a_saved_room_tap_is_read_back(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps({"room_tap": "clean"}))
+    assert Storage(path).load().room_tap is RoomTap.CLEAN
+    assert Snapshot().room_tap is RoomTap.LIST
 
 
 def test_text_that_is_not_valid_unicode_is_saved(tmp_path):

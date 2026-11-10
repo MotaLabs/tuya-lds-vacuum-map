@@ -20,7 +20,7 @@ from tuya_lds_vacuum_map.lds.codec import decode_raw, encode_raw
 from tuya_lds_vacuum_map.map.colors import format_color
 from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, Units
 from tuya_lds_vacuum_map.session import ROOM_SETTINGS_EVENT
-from tuya_lds_vacuum_map.storage import MapSource, Snapshot, Storage
+from tuya_lds_vacuum_map.storage import MapSource, RoomTap, Snapshot, Storage
 
 DPS = PROFILE.data_points
 
@@ -199,11 +199,113 @@ async def test_a_tap_without_a_mode_cleans_the_room(harness):
     harness.session().on_cloud_payload(cloud_payload())
     await harness.dp(DPS.raw, encode_raw(rooms_message()))
     harness.session().scene()
+    await harness.message(harness.session().topics.room_tap_set, "Clean the room")
     x, y = cell_center_mm(30, 14)
     await harness.message(harness.session().topics.tap, json.dumps({"x": x, "y": y}))
     await eventually(lambda: harness.services)
     [(_, _, data)] = harness.services
     assert decode_raw(data["value"])["data"]["cmds"][0]["data"]["segmentId"] == [2]
+
+
+async def room_list(harness: Harness, *points: tuple[int, int]) -> None:
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    await harness.dp(DPS.raw, encode_raw(rooms_message()))
+    session.scene()
+    for count, point in enumerate(points, 1):
+        await harness.tap(*point)
+        await eventually(lambda count=count: len(session.rooms.ids) == count)
+
+
+def segments(harness: Harness) -> list[list[int]]:
+    return [decode_raw(data["value"])["data"]["cmds"][0]["data"]["segmentId"] for _, _, data in harness.services]
+
+
+async def test_the_room_tap_is_set_from_home_assistant(harness):
+    session = harness.session()
+    await session.publish_states()
+    assert session.snapshot.room_tap is RoomTap.LIST
+    assert harness.client.last(session.topics.room_tap) == "Add it to a list"
+    await harness.message(session.topics.room_tap_set, "Clean the room")
+    assert session.snapshot.room_tap is RoomTap.CLEAN
+    assert harness.client.last(session.topics.room_tap) == "Clean the room"
+    assert session.unsaved
+
+
+async def test_an_unknown_room_tap_changes_nothing(harness, caplog):
+    session = harness.session()
+    await harness.message(session.topics.room_tap_set, "clean")
+    assert session.snapshot.room_tap is RoomTap.LIST
+    assert not session.unsaved
+    assert "could not handle" in caplog.text
+
+
+async def test_discovery_announces_the_room_tap_and_the_buttons(tmp_path):
+    harness = Harness(tmp_path, language="pt-BR")
+    await harness.session().publish_discovery()
+    prefix = f"homeassistant/{{}}/tlvm_{DEVICE}_{{}}/config"
+    tap = json.loads(harness.client.last(prefix.format("select", "room_tap")))
+    assert (tap["name"], tap["options"]) == ("Toque no cômodo", ["Limpar o cômodo", "Adicionar à lista"])
+    start = json.loads(harness.client.last(prefix.format("button", "start")))
+    clear = json.loads(harness.client.last(prefix.format("button", "clear")))
+    assert (start["name"], clear["name"]) == ("Iniciar seleção", "Descartar seleção")
+
+
+async def test_a_room_list_is_numbered_on_the_map_and_started_from_home_assistant(harness):
+    await harness.message(harness.session().topics.auto_start_set, "OFF")
+    await room_list(harness, cell_center_mm(30, 14), cell_center_mm(10, 14))
+    assert harness.session().scene().room_order == {2: 1, 1: 2}
+    assert harness.session().dirty.is_set()
+    assert harness.services == []
+    await harness.message(harness.session().topics.start, "PRESS")
+    assert segments(harness) == [[2, 1]]
+    assert harness.session().scene().room_order == {}
+
+
+async def test_the_clear_button_drops_the_list(harness):
+    await harness.message(harness.session().topics.auto_start_set, "OFF")
+    await room_list(harness, cell_center_mm(30, 14))
+    await harness.message(harness.session().topics.clear, "PRESS")
+    assert harness.session().scene().room_order == {}
+    await harness.message(harness.session().topics.start, "PRESS")
+    assert harness.services == []
+
+
+async def test_choosing_to_clean_on_tap_drops_the_list(harness):
+    await harness.message(harness.session().topics.auto_start_set, "OFF")
+    await room_list(harness, cell_center_mm(30, 14))
+    await harness.message(harness.session().topics.room_tap_set, "Add it to a list")
+    assert harness.session().rooms.ids == [2]
+    await harness.message(harness.session().topics.room_tap_set, "Clean the room")
+    assert harness.session().rooms.ids == []
+
+
+async def test_turning_the_automatic_start_on_starts_a_waiting_list(harness):
+    session = harness.session()
+    await harness.message(session.topics.auto_start_set, "OFF")
+    await room_list(harness, cell_center_mm(10, 14))
+    session.snapshot.start_delay = 0.01
+    await harness.message(session.topics.auto_start_set, "ON")
+    await eventually(lambda: harness.services)
+    assert segments(harness) == [[1]]
+
+
+async def test_a_setting_changed_while_a_tap_waits_applies_after_it(tmp_path):
+    harness = Harness(tmp_path, timing=dataclasses.replace(TIMING, double_tap=0.3))
+    session = harness.session()
+    await harness.message(session.topics.auto_start_set, "OFF")
+    session.on_cloud_payload(cloud_payload())
+    await harness.dp(DPS.raw, encode_raw(rooms_message()))
+    session.scene()
+    await harness.tap(*cell_center_mm(10, 14))
+    await eventually(lambda: session.rooms.ids == [1])
+    await harness.tap(*cell_center_mm(30, 14))
+    session.snapshot.start_delay = 0.01
+    await harness.message(session.topics.auto_start_set, "ON")
+    await asyncio.sleep(0.1)
+    assert harness.services == []
+    await eventually(lambda: harness.services)
+    assert segments(harness) == [[1, 2]]
 
 
 async def test_double_tap_opens_the_room_settings(harness):
@@ -339,9 +441,11 @@ async def test_state_survives_a_restart(tmp_path):
     await first.message(first.session().topics.room_settings_set, "Right")
     await first.message(first.session().topics.auto_start_set, "OFF")
     await first.message(first.session().topics.start_delay_set, "45")
+    await first.message(first.session().topics.room_tap_set, "Clean the room")
     first.session().save()
     second = Harness(tmp_path).session()
     assert (second.snapshot.auto_start, second.snapshot.start_delay) == (False, 45.0)
+    assert second.snapshot.room_tap is RoomTap.CLEAN
     assert second.robot.rooms.names == ["Left", "Right"]
     assert (second.robot.room_mode, second.snapshot.selected_room) == (True, "Right")
     assert (second.robot.state, second.snapshot.source, second.map.map_id) == ("totaling", MapSource.LOCAL, 42)
@@ -533,6 +637,9 @@ TOPIC_KINDS = (
     "room_color_random",
     "auto_start_set",
     "start_delay_set",
+    "room_tap_set",
+    "start",
+    "clear",
 )
 taps = st.fixed_dictionaries({"x": json_scalars, "y": json_scalars}, optional={"mode": json_scalars})
 

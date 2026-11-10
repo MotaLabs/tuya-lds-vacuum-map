@@ -42,7 +42,8 @@ class HomeAssistant:
                     }
                     waiting = set(subscriptions)
                     if not waiting:
-                        backoff = self._ready()
+                        self._ready()
+                        backoff = 1
                     async for raw in ws:
                         message = json.loads(raw)
                         if message.get("type") == "event":
@@ -54,7 +55,8 @@ class HomeAssistant:
                             if message["id"] in waiting:
                                 waiting.discard(message["id"])
                                 if not waiting:
-                                    backoff = self._ready()
+                                    self._ready()
+                                    backoff = 1
                         elif message.get("type") == "result":
                             future = self._pending.pop(message.get("id"), None)
                             if future and not future.done():
@@ -71,10 +73,9 @@ class HomeAssistant:
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 60)
 
-    def _ready(self) -> int:
+    def _ready(self) -> None:
         self.connected.set()
         log.info("connected to Home Assistant")
-        return 1
 
     async def call_service(self, domain: str, service: str, data: dict) -> None:
         reply = await self._call({"type": "call_service", "domain": domain, "service": service, "service_data": data})

@@ -321,6 +321,7 @@ class RobotSession:
             "robot_state_name": self.state_labels.get(self.robot.state, self.robot.state),
             "robot_position": {"x": position[0], "y": position[1]} if position else None,
             "map_source": self.snapshot.source.value,
+            "selection": "rooms" if self.rooms.ids else "spot" if self.spots.preview else "none",
             "rooms": [
                 {"id": room.id, "name": room.name, "color": format_color(self.room_colors[room.id])}
                 for room in scene.rooms

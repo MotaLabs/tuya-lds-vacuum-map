@@ -209,7 +209,7 @@ The service creates, through MQTT discovery:
 
 | Entity | What it is |
 |---|---|
-| `camera.<device>_map` | The map, with `calibration_points`, `robot_state` (the robot's own code), `robot_state_name` (its text in the service's language, such as "Emptying the bin"), `robot_position`, `map_source`, `rooms` (id, name, color) and `image_digest` attributes; the digest changes with every new image, so a card that redraws when the camera changes shows a tapped room or spot as soon as it is drawn, and follows the robot as it moves |
+| `camera.<device>_map` | The map, with `calibration_points`, `robot_state` (the robot's own code), `robot_state_name` (its text in the service's language, such as "Emptying the bin"), `robot_position`, `map_source`, `rooms` (id, name, color), `selection` (`rooms` while a list of rooms waits, `spot` while a spot preview does, `none` otherwise) and `image_digest` attributes; the digest changes with every new image, so a card that redraws when the camera changes shows a tapped room or spot as soon as it is drawn, and follows the robot as it moves |
 | `select.<device>_map_source` | `Automatic` or `Local only` |
 | `select.<device>_room_settings` | The room picked by a double tap, or `None` |
 | `text.<device>_room_color` | The picked room's color as `#rrggbb`; write a new one to change it |

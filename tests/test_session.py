@@ -584,17 +584,34 @@ async def test_map_attributes_follow_the_robot(harness):
 
 async def test_map_attributes_change_with_the_image(harness):
     session = harness.session()
-    await room_list(harness, cell_center_mm(30, 14))
+    await harness.message(session.topics.auto_start_set, "OFF")
+    await room_list(harness, cell_center_mm(30, 14), cell_center_mm(10, 14))
     await session.redraw()
     listed = json.loads(harness.client.last(session.topics.map_attributes))
     await session.redraw()
     again = json.loads(harness.client.last(session.topics.map_attributes))
     session.rooms.clear()
+    session.rooms.toggle(42, 1)
+    session.rooms.toggle(42, 2)
     await session.redraw()
-    cleared = json.loads(harness.client.last(session.topics.map_attributes))
+    reordered = json.loads(harness.client.last(session.topics.map_attributes))
     assert again == listed
-    assert cleared.pop("image_digest") != listed.pop("image_digest")
-    assert cleared == listed
+    assert reordered.pop("image_digest") != listed.pop("image_digest")
+    assert reordered == listed
+
+
+async def test_map_attributes_tell_what_is_selected(harness):
+    session = harness.session()
+    await harness.message(session.topics.auto_start_set, "OFF")
+    await room_list(harness, cell_center_mm(30, 14))
+    await session.redraw()
+    assert json.loads(harness.client.last(session.topics.map_attributes))["selection"] == "rooms"
+    await harness.message(session.topics.tap, json.dumps({"mode": "spot", "x": 0, "y": 0}))
+    await session.redraw()
+    assert json.loads(harness.client.last(session.topics.map_attributes))["selection"] == "spot"
+    await harness.message(session.topics.clear, "PRESS")
+    await session.redraw()
+    assert json.loads(harness.client.last(session.topics.map_attributes))["selection"] == "none"
 
 
 async def test_map_attributes_have_no_position_before_the_path(harness):

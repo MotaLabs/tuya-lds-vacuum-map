@@ -582,6 +582,21 @@ async def test_map_attributes_follow_the_robot(harness):
     assert (first["robot_position"], second["robot_position"]) == ({"x": 100, "y": 200}, {"x": 300, "y": 200})
 
 
+async def test_map_attributes_change_with_the_image(harness):
+    session = harness.session()
+    await room_list(harness, cell_center_mm(30, 14))
+    await session.redraw()
+    listed = json.loads(harness.client.last(session.topics.map_attributes))
+    await session.redraw()
+    again = json.loads(harness.client.last(session.topics.map_attributes))
+    session.rooms.clear()
+    await session.redraw()
+    cleared = json.loads(harness.client.last(session.topics.map_attributes))
+    assert again == listed
+    assert cleared.pop("image_digest") != listed.pop("image_digest")
+    assert cleared == listed
+
+
 async def test_map_attributes_have_no_position_before_the_path(harness):
     harness.session().on_cloud_payload(cloud_payload())
     await harness.session().redraw()

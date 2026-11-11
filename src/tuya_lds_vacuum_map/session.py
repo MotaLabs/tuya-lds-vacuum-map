@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import random
@@ -314,6 +315,7 @@ class RobotSession:
         image, calibration = await asyncio.to_thread(self.renderer.render, scene)
         position = self.robot.path.position
         attributes = {
+            "image_digest": hashlib.sha256(image).hexdigest()[:16],
             "calibration_points": calibration,
             "robot_state": self.robot.state,
             "robot_state_name": self.state_labels.get(self.robot.state, self.robot.state),

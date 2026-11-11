@@ -41,12 +41,10 @@ def test_topics():
         "maps/dev/room_color/random",
         "maps/dev/auto_start/set",
         "maps/dev/start_delay/set",
-        "maps/dev/room_tap/set",
         "maps/dev/start",
         "maps/dev/clear",
     )
     assert (TOPICS.auto_start, TOPICS.start_delay) == ("maps/dev/auto_start", "maps/dev/start_delay")
-    assert TOPICS.room_tap == "maps/dev/room_tap"
 
 
 def test_discovery_configs():
@@ -63,13 +61,11 @@ def test_discovery_configs():
             "random_room_color": "Dice",
             "auto_start": "Auto start",
             "start_delay": "Delay",
-            "room_tap": "Tap",
             "start": "Go",
             "clear": "Drop",
         },
         ["Auto", "Local"],
         ["None", "Left"],
-        ["Clean", "List"],
         (1.0, 300.0),
     )
     assert sorted(configs) == [
@@ -84,14 +80,7 @@ def test_discovery_configs():
         "switch/tlvm_dev_auto_start",
         "text/tlvm_dev_room_color",
     ]
-    tap = configs["select/tlvm_dev_room_tap"]
-    assert (tap["name"], tap["state_topic"], tap["command_topic"], tap["options"], tap["entity_category"]) == (
-        "Tap",
-        TOPICS.room_tap,
-        TOPICS.room_tap_set,
-        ["Clean", "List"],
-        "config",
-    )
+    assert configs["select/tlvm_dev_room_tap"] is None
     start, clear = configs["button/tlvm_dev_start"], configs["button/tlvm_dev_clear"]
     assert (start["name"], start["command_topic"], start["unique_id"]) == ("Go", TOPICS.start, "tlvm_dev_start")
     assert (clear["name"], clear["command_topic"], clear["unique_id"]) == ("Drop", TOPICS.clear, "tlvm_dev_clear")
@@ -124,7 +113,9 @@ def test_discovery_configs():
     assert (room["command_topic"], room["options"]) == (TOPICS.room_settings_set, ["None", "Left"])
     assert configs["select/tlvm_dev_map_source"]["options"] == ["Auto", "Local"]
     assert all(
-        config["availability_topic"] == AVAILABILITY and config["device"] == DEVICE for config in configs.values()
+        config["availability_topic"] == AVAILABILITY and config["device"] == DEVICE
+        for config in configs.values()
+        if config is not None
     )
 
 
@@ -193,9 +184,10 @@ async def test_publish_map_sends_image_and_attributes():
 
 async def test_publish_discovery_uses_the_prefix():
     client = FakeClient()
-    await bridge(client).publish_discovery({"camera/x": {"name": "Mapa"}})
+    await bridge(client).publish_discovery({"camera/x": {"name": "Mapa"}, "select/y": None})
     assert client.published == [
-        ("homeassistant/camera/x/config", json.dumps({"name": "Mapa"}, ensure_ascii=False), True)
+        ("homeassistant/camera/x/config", json.dumps({"name": "Mapa"}, ensure_ascii=False), True),
+        ("homeassistant/select/y/config", "", True),
     ]
 
 

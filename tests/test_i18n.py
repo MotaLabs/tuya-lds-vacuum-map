@@ -34,6 +34,14 @@ def test_a_file_can_translate_part_of_the_texts(tmp_path):
     assert (texts.states["charging"], texts.states["emptying"]) == ("Lädt", "Emptying the bin")
 
 
+def test_a_file_with_the_texts_of_a_retired_entity_still_loads(tmp_path):
+    path = tmp_path / "mine.toml"
+    path.write_text('map = "Karte"\nroom_tap = "Tippen"\nroom_tap_clean = "Putzen"\nroom_tap_list = "Liste"\n')
+    texts = load_texts(str(path))
+    assert texts.map == "Karte"
+    assert not hasattr(texts, "room_tap")
+
+
 @pytest.mark.parametrize(
     ("text", "message"),
     [

@@ -12,7 +12,6 @@ from .lds.messages import Point, Room
 from .map.hit import area_at, room_at
 from .map.model import MapModel
 from .robot import Robot
-from .storage import RoomTap
 
 log = logging.getLogger(__name__)
 
@@ -209,7 +208,6 @@ class TapController:
         double_tap_seconds: float,
         spots: SpotPicker,
         rooms: RoomPicker,
-        room_tap: Callable[[], RoomTap],
     ) -> None:
         self.robot = robot
         self.map = map_model
@@ -218,7 +216,6 @@ class TapController:
         self.double_tap = DoubleTap(double_tap_seconds)
         self.spots = spots
         self.rooms = rooms
-        self.room_tap = room_tap
         self._pending: asyncio.Task | None = None
         self._then: Callable[[], Awaitable[None]] | None = None
         self._picking = False
@@ -248,12 +245,10 @@ class TapController:
         area = area_at(rooms.areas if rooms else (), x, y)
         if area is not None and rooms is not None:
             self._wait(partial(self._send, commands.clean_areas(map_id, rooms.raw_areas)))
-        elif room is not None and self.room_tap() is RoomTap.LIST:
+        elif room is not None:
             if self._picking:
                 await self._settle()
             self._wait(partial(self._pick, map_id, room.id), picking=True)
-        elif room is not None:
-            self._wait(partial(self._send, commands.clean_rooms(map_id, [room.id])))
 
     async def start(self) -> None:
         await self._settle()
@@ -295,9 +290,6 @@ class TapController:
         await send_or_log(self.sender, command)
 
     async def _pick(self, map_id: int, room_id: int) -> None:
-        if self.room_tap() is not RoomTap.LIST:
-            self.reschedule()
-            return
         self.spots.clear()
         self.rooms.toggle(map_id, room_id)
 

@@ -22,7 +22,7 @@ the map into cleaning commands sent over the local network.
 | Done | Per-room suction and water icons | Shown while per-room settings are on |
 | Done | Room colors | Random for each new room, kept across restarts, editable from Home Assistant |
 | Done | Areas and no-go zones | Read from the robot; edit them in the app and the map follows |
-| Done | Tap rooms to clean them in the order tapped | By default a tap adds the room to a list, numbered on the map, that starts after a delay or from a button; a select turns a tap back into cleaning that room at once. Local command, no cloud. The list, its automatic start and the buttons have not been tried on a robot yet, nor whether the robot keeps the order |
+| Done | Tap rooms to clean them in the order tapped | A tap adds the room to a list, numbered on the map, that starts after a delay or from a button. Local command, no cloud. The list, its automatic start and the buttons have not been tried on a robot yet, nor whether the robot keeps the order |
 | Done | Tap an area to clean it | Uses the areas as they are on the robot |
 | Done | Double tap a room to open its settings | Selects the room on a Home Assistant select and fires an event |
 | Done | Spot cleaning | A tap shows the 1.5 m square around the point; a tap inside it, or the automatic start after a delay, sends the robot, and the square stays on the map with its path while it works. The preview and the automatic start have not been tried on a robot yet |
@@ -209,12 +209,11 @@ The service creates, through MQTT discovery:
 
 | Entity | What it is |
 |---|---|
-| `camera.<device>_map` | The map, with `calibration_points`, `robot_state` (the robot's own code), `robot_state_name` (its text in the service's language, such as "Emptying the bin"), `robot_position`, `map_source`, `rooms` (id, name, color) and `image_digest` attributes; the digest changes with every new image, so a card that redraws when the camera changes shows a tapped room or spot as soon as it is drawn, and follows the robot as it moves |
+| `camera.<device>_map` | The map, with `calibration_points`, `robot_state` (the robot's own code), `robot_state_name` (its text in the service's language, such as "Emptying the bin"), `robot_position`, `map_source`, `rooms` (id, name, color), `selection` (`rooms` while a list of rooms waits, `spot` while a spot preview does, `none` otherwise) and `image_digest` attributes; the digest changes with every new image, so a card that redraws when the camera changes shows a tapped room or spot as soon as it is drawn, and follows the robot as it moves |
 | `select.<device>_map_source` | `Automatic` or `Local only` |
 | `select.<device>_room_settings` | The room picked by a double tap, or `None` |
 | `text.<device>_room_color` | The picked room's color as `#rrggbb`; write a new one to change it |
 | `button.<device>_random_room_color` | Gives the picked room a new random color |
-| `select.<device>_room_tap` | What a tap on a room does: `Clean the room` at once, or `Add it to a list` (the default) |
 | `button.<device>_start_selection` | Starts the list of rooms, or the spot preview when there is no list |
 | `button.<device>_clear_selection` | Drops the list of rooms and the spot preview |
 | `switch.<device>_automatic_start` | On: a list of rooms or a spot preview starts by itself after the start delay. Off: only the start button, or a tap inside the spot preview, starts it |
@@ -258,13 +257,38 @@ map_modes:
       service_data:
         topic: tuya_lds_vacuum_map/<device-id>/tap
         payload: '{"mode": "spot", "x": [[point_x]], "y": [[point_y]]}'
+append_icons: true
+icons:
+  - icon: mdi:play
+    tooltip: Start the selection
+    conditions:
+      - entity: camera.robot_vacuum_map
+        attribute: selection
+        value_not: none
+    tap_action:
+      action: call-service
+      service: button.press
+      service_data:
+        entity_id: button.robot_vacuum_start_selection
+  - icon: mdi:selection-remove
+    tooltip: Clear the selection
+    conditions:
+      - entity: camera.robot_vacuum_map
+        attribute: selection
+        value_not: none
+    tap_action:
+      action: call-service
+      service: button.press
+      service_data:
+        entity_id: button.robot_vacuum_clear_selection
 ```
 
-In the room mode, `select.<device>_room_tap` decides what a tap does. With `Add it to a list`, the room gets
-the next number on the map and a second tap on it takes it out; the list starts in that order once no tap came
-for the start delay, or from the start button. With `Clean the room`, the robot leaves for that room alone.
-Either way a tap waits the double-tap window first, so a double tap opens the room's settings and leaves the
-list as it is; the start delay counts from the last tap. A tap on an area cleans the areas at once and drops the list.
+The two icons join the card's own and show only while a list of rooms or a spot preview waits.
+
+In the room mode, a tap adds the room to a list: the room gets the next number on the map and a second tap on
+it takes it out. The list starts in that order once no tap came for the start delay, or from the start button.
+A tap waits the double-tap window first, so a double tap opens the room's settings and leaves the list as it
+is; the start delay counts from the last tap. A tap on an area cleans the areas at once and drops the list.
 
 In the spot mode every tap reaches the service at once. The first one draws the square the robot would clean
 and the point at its center; a tap inside the square starts the clean, a tap outside moves it. With the

@@ -63,7 +63,9 @@ def test_every_inbound_topic_is_routed(harness):
 
 async def test_connect_announces_every_robot_with_one_availability(harness):
     await harness.app.on_mqtt_connect()
-    configs = [json.loads(payload) for topic, payload in harness.client.published if topic.endswith("/config")]
+    configs = [
+        json.loads(payload) for topic, payload in harness.client.published if topic.endswith("/config") and payload
+    ]
     assert {config["device"]["name"] for config in configs} == {"Hall", "Upstairs"}
     assert {config["availability_topic"] for config in configs} == {"tuya_lds_vacuum_map/availability"}
     assert {config["device"]["model"] for config in configs} == {"lds-robot", "custom"}

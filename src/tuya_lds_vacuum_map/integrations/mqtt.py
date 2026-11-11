@@ -76,14 +76,6 @@ class Topics:
         return f"{self.base}/start_delay/set"
 
     @property
-    def room_tap(self) -> str:
-        return f"{self.base}/room_tap"
-
-    @property
-    def room_tap_set(self) -> str:
-        return f"{self.base}/room_tap/set"
-
-    @property
     def start(self) -> str:
         return f"{self.base}/start"
 
@@ -104,10 +96,12 @@ class Topics:
             self.room_color_random,
             self.auto_start_set,
             self.start_delay_set,
-            self.room_tap_set,
             self.start,
             self.clear,
         )
+
+
+RETIRED = (("select", "room_tap"),)
 
 
 @dataclass(frozen=True)
@@ -126,11 +120,10 @@ def discovery_configs(
     names: dict[str, str],
     source_options: list[str],
     room_options: list[str],
-    room_tap_options: list[str],
     start_delay_range: tuple[float, float],
-) -> dict[str, dict[str, Any]]:
+) -> dict[str, dict[str, Any] | None]:
     common = {"availability_topic": availability, "device": device}
-    return {
+    return {f"{kind}/{unique_prefix}_{name}": None for kind, name in RETIRED} | {
         f"camera/{unique_prefix}_map": {
             **common,
             "name": names["map"],
@@ -194,16 +187,6 @@ def discovery_configs(
             "unit_of_measurement": "s",
             "device_class": "duration",
             "entity_category": "config",
-        },
-        f"select/{unique_prefix}_room_tap": {
-            **common,
-            "name": names["room_tap"],
-            "unique_id": f"{unique_prefix}_room_tap",
-            "state_topic": topics.room_tap,
-            "command_topic": topics.room_tap_set,
-            "options": room_tap_options,
-            "entity_category": "config",
-            "icon": "mdi:gesture-tap",
         },
         f"button/{unique_prefix}_start": {
             **common,
@@ -331,9 +314,10 @@ class MqttBridge:
             return False
         return True
 
-    async def publish_discovery(self, configs: dict[str, dict[str, Any]]) -> None:
+    async def publish_discovery(self, configs: dict[str, dict[str, Any] | None]) -> None:
         for path, config in configs.items():
-            await self.publish(f"{self.discovery_prefix}/{path}/config", json.dumps(config, ensure_ascii=False))
+            payload = "" if config is None else json.dumps(config, ensure_ascii=False)
+            await self.publish(f"{self.discovery_prefix}/{path}/config", payload)
 
     async def publish_map(self, topics: Topics, image: bytes, attributes: dict[str, Any]) -> bool:
         if not await self.publish(topics.map, image):

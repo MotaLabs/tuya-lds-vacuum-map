@@ -6,6 +6,7 @@ from typing import Any
 
 DEFAULT_LANGUAGE = "en"
 TABLES = ("levels", "states")
+RETIRED = ("room_tap", "room_tap_clean", "room_tap_list")
 _FOLDER = resources.files(__package__) / "translations"
 
 
@@ -25,9 +26,6 @@ class Texts:
     no_room: str
     auto_start: str
     start_delay: str
-    room_tap: str
-    room_tap_clean: str
-    room_tap_list: str
     start: str
     clear: str
     clean_time: str
@@ -46,6 +44,7 @@ def builtin_languages() -> list[str]:
 def load_texts(language: str = DEFAULT_LANGUAGE) -> Texts:
     base = _read(DEFAULT_LANGUAGE)
     data = base if language == DEFAULT_LANGUAGE else _read(language)
+    data = {key: value for key, value in data.items() if key not in RETIRED}
     unknown = sorted(set(data) - {field.name for field in fields(Texts)})
     if unknown:
         raise TranslationError(f"unknown texts in {language!r}: {', '.join(unknown)}")

@@ -1,5 +1,4 @@
 import asyncio
-import json
 import re
 from types import SimpleNamespace
 
@@ -209,7 +208,9 @@ def test_no_statistic_gives_no_sensor():
 
 
 async def test_publish_needs_a_connection():
-    assert not bridge().connected
+    fresh = MqttBridge(Broker("broker"), AVAILABILITY, "homeassistant")
+    assert not fresh.connected
+    assert await fresh.publish("t", "x") is False
     assert await bridge().publish("t", "x") is False
     assert await bridge(FakeClient(fail=True)).publish("t", "x") is False
 
@@ -222,9 +223,9 @@ async def test_publish_map_sends_image_and_attributes():
 
 async def test_publish_discovery_uses_the_prefix():
     client = FakeClient()
-    await bridge(client).publish_discovery({"camera/x": {"name": "Mapa"}, "select/y": None})
+    await bridge(client).publish_discovery({"camera/x": {"name": "Área"}, "select/y": None})
     assert client.published == [
-        ("homeassistant/camera/x/config", json.dumps({"name": "Mapa"}, ensure_ascii=False), True),
+        ("homeassistant/camera/x/config", '{"name": "Área"}', True),
         ("homeassistant/select/y/config", "", True),
     ]
 

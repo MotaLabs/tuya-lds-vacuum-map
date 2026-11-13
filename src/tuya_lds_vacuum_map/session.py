@@ -149,6 +149,7 @@ class RobotSession:
             self.map.coverage.paint(update.new_path)
         if update.rooms_changed:
             self.color_new_rooms()
+            self.taps.follow_map()
         if update.rooms_renamed:
             asyncio.get_running_loop().create_task(self.publish_discovery())
         if self.cloud_sync and update.started_moving:
@@ -167,6 +168,7 @@ class RobotSession:
             return
         if changed:
             log.info("%s: cloud map updated (%sx%s)", self.label, self.map.cloud.width, self.map.cloud.height)
+            self.taps.follow_map()
             self.unsaved = True
             self.dirty.set()
 

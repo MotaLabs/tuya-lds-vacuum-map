@@ -532,6 +532,26 @@ async def test_scene_needs_a_map(harness):
     assert scene.dock == (0, 0)
 
 
+async def test_the_scene_carries_the_robot_the_areas_and_the_level_labels(harness):
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    await harness.dp(DPS.raw, encode_raw(rooms_message()))
+    await harness.dp(DPS.path, path_chunk(0, [[0, 0], [100, 200]]))
+    scene = session.scene()
+    assert scene.robot == (100, 200)
+    assert [(area.id, area.name) for area in scene.areas] == [(101, "Cats"), (4, "")]
+    assert (scene.fan_labels["quiet"], scene.water_labels[3]) == ("Quiet", "High")
+
+
+async def test_the_covered_floor_takes_the_nearest_room(harness):
+    await harness.dp(DPS.raw, encode_raw(rooms_message()))
+    left, right = cell_center_mm(10, 14), cell_center_mm(30, 14)
+    await harness.dp(DPS.path, path_chunk(0, [list(left), list(right)]))
+    cells = set(harness.session().scene().grid.cells)
+    assert {1, 2} <= cells
+    assert CODES.floor not in cells
+
+
 async def test_render_loop_publishes_the_map(harness):
     harness.session().on_cloud_payload(cloud_payload())
     task = asyncio.create_task(harness.session().render_loop())

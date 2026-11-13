@@ -1,3 +1,4 @@
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -35,6 +36,26 @@ def test_a_segment_is_painted_end_to_end():
     cov.paint([(25, 25), (1025, 25)])
     assert all((col, 0) in cov.cells for col in range(-3, 24))
     assert (24, 0) not in cov.cells
+
+
+@pytest.mark.parametrize(("start", "end"), [((-1000, 25), (1000, 25)), ((25, -1000), (25, 1000))])
+def test_a_straight_segment_paints_what_each_of_its_millimetres_paints(start, end):
+    cov = coverage()
+    cov.paint([start, end])
+    every_millimetre = coverage()
+    for step in range(2001):
+        every_millimetre.paint(
+            [(start[0] + (end[0] - start[0]) * step // 2000, start[1] + (end[1] - start[1]) * step // 2000)]
+        )
+    assert cov.cells == every_millimetre.cells
+
+
+def test_a_point_below_and_left_of_the_origin_paints_around_its_own_cell():
+    cov = coverage()
+    cov.paint([(-25, -25)])
+    disc = coverage()
+    disc.paint([(25, 25)])
+    assert cov.cells == {(col - 1, row - 1) for col, row in disc.cells}
 
 
 def test_cells_round_trip_through_a_flat_list():

@@ -13,6 +13,7 @@ from tuya_lds_vacuum_map.i18n import load_texts
 from tuya_lds_vacuum_map.integrations import tuya_cloud
 from tuya_lds_vacuum_map.integrations.homeassistant import HomeAssistantError
 from tuya_lds_vacuum_map.integrations.localtuya import DP_EVENT, available_trigger
+from tuya_lds_vacuum_map.integrations.mqtt import Broker
 from tuya_lds_vacuum_map.integrations.tuya_cloud import TuyaCloud
 from tuya_lds_vacuum_map.lds.codec import decode_raw, encode_raw
 from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, DataPoints
@@ -233,6 +234,27 @@ async def test_the_watch_runs_only_with_a_cloud_project(tmp_path):
             await asyncio.sleep(0.02)
         await stop(task)
     assert started == [True]
+
+
+def test_each_setting_reaches_its_client(tmp_path):
+    settings = Settings(
+        ha_url="http://ha.local:8123",
+        ha_token="token",
+        mqtt_host="broker",
+        mqtt_port=1884,
+        mqtt_username="map",
+        mqtt_password="pw",
+        robots=(RobotSettings(DEVICE),),
+        data_dir=str(tmp_path),
+        cloud=CloudCredentials("id", "secret", "eu"),
+    )
+    app = App(settings, {DEFAULT_PROFILE: PROFILE}, load_texts("en"))
+    assert app.settings is settings
+    assert (app.ha.url, app.ha.token) == ("ws://ha.local:8123/api/websocket", "token")
+    assert app.mqtt.broker == Broker("broker", 1884, "map", "pw")
+    assert (app.mqtt.availability, app.mqtt.discovery_prefix) == (settings.availability_topic, "homeassistant")
+    cloud = app.cloud
+    assert (cloud.client_id, cloud.client_secret, cloud.base) == ("id", "secret", tuya_cloud.ENDPOINTS["eu"])
 
 
 def test_every_robot_shares_the_cloud_project(tmp_path):

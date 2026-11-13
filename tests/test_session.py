@@ -640,7 +640,7 @@ async def test_a_restart_during_a_cleaning_paints_no_band_across_the_points_it_m
 async def test_a_saved_path_that_cannot_be_read_is_dropped(tmp_path, caplog):
     Storage(tmp_path / DEVICE / "state.json").save(Snapshot(robot_state="idle", path_id=3, path=[[None, 0]]))
     session = Harness(tmp_path).session()
-    assert (session.robot.path.path_id, session.robot.path.points) == (None, [])
+    assert (session.robot.path.path_id, session.robot.path.points, session.robot.path.offset) == (None, [], 0)
     assert session.robot.state == "idle"
     assert "the saved path could not be read: not a number" in caplog.text
 

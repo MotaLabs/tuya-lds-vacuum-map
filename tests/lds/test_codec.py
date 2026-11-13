@@ -1,3 +1,4 @@
+import base64
 import contextlib
 
 import pytest
@@ -24,6 +25,11 @@ def test_empty_names():
 def test_malformed_names_are_value_errors(code):
     with pytest.raises(ValueError, match=r"name code|invalid literal|arg not in range"):
         decode_name(code)
+
+
+def test_raw_values_are_compact_utf8_json():
+    raw = encode_raw({"name": "Suíte", "ids": [1, 2]})
+    assert base64.b64decode(raw) == '{"name":"Suíte","ids":[1,2]}'.encode()
 
 
 def test_raw_values_are_base64_json():
@@ -56,5 +62,5 @@ def test_any_object_survives_a_raw_round_trip(payload):
 
 @given(json_values.filter(lambda value: not isinstance(value, dict)))
 def test_a_raw_value_must_be_an_object(value):
-    with pytest.raises(ValueError, match="JSON object"):
+    with pytest.raises(ValueError, match=r"^raw value is not a JSON object$"):
         decode_raw(encode_raw(value))

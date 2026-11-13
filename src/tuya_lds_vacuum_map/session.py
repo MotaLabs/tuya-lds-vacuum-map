@@ -58,6 +58,10 @@ class RobotSession:
         self.map = MapModel(coverage, self.snapshot.cloud_map)
         coverage.load_list(self.snapshot.coverage)
         self.robot = Robot(profile, self.snapshot.room_message, self.snapshot.robot_state, self.snapshot.room_mode)
+        try:
+            self.robot.path.restore(self.snapshot.path_id, self.snapshot.path, self.snapshot.path_start)
+        except ValueError as error:
+            log.warning("%s: the saved path could not be read: %s", self.label, error)
         self.renderer = Renderer(profile.cells, Style(scale=settings.map_scale, font_path=settings.font_path))
         self.dirty = asyncio.Event()
         link = LocalTuyaLink(ha, config.device_id, profile.data_points.raw)
@@ -379,6 +383,9 @@ class RobotSession:
                     source=self.snapshot.source,
                     selected_room=self.snapshot.selected_room,
                     coverage=self.map.coverage.to_list(),
+                    path_id=self.robot.path.path_id,
+                    path=[list(point) for point in self.robot.path.points],
+                    path_start=self.robot.path.offset,
                     room_colors={str(room_id): format_color(color) for room_id, color in self.room_colors.items()},
                     auto_start=self.snapshot.auto_start,
                     start_delay=self.snapshot.start_delay,

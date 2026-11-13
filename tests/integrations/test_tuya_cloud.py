@@ -23,6 +23,7 @@ SHADOW_PATH = "/v2.0/cloud/thing/dev/shadow/properties"
 class FakeHttp:
     def __init__(self) -> None:
         self.requests: list = []
+        self.timeouts: list[float] = []
         self.answers = {
             BASE + TOKEN_PATH: [{"success": True, "result": {"access_token": "tok", "expire_time": 7200}}],
             BASE + FILES_PATH: [{"success": True, "result": FILES}],
@@ -32,6 +33,7 @@ class FakeHttp:
     def urlopen(self, request, timeout: float):
         url = request.full_url if isinstance(request, urllib.request.Request) else request
         self.requests.append(request)
+        self.timeouts.append(timeout)
         answers = self.answers[url]
         answer = answers.pop(0) if len(answers) > 1 else answers[0]
         return io.BytesIO(json.dumps(answer).encode())
@@ -102,6 +104,7 @@ async def test_requests_are_signed(http, clock):
     assert request.get_header("Sign") == expected
     assert (request.get_header("Client_id"), request.get_header("Access_token")) == ("id", "tok")
     assert request.get_header("Sign_method") == "HMAC-SHA256"
+    assert http.requests[0].get_header("Access_token") is None
 
 
 @pytest.mark.parametrize("code", [1010, 1011])
@@ -118,22 +121,42 @@ async def test_a_rejected_token_is_fetched_again(http, code):
     assert http.urls().count(BASE + TOKEN_PATH) == 2
 
 
+async def test_every_request_gives_up_after_the_timeout(http):
+    await TuyaCloud("id", "secret", "us").realtime_map("dev")
+    await TuyaCloud("id", "secret", "us", timeout=5).realtime_map("dev")
+    assert http.timeouts == [20, 20, 20, 5, 5, 5]
+
+
+async def test_another_refusal_keeps_the_token(http):
+    busy = {"success": False, "code": 2001, "msg": "busy"}
+    http.answers[BASE + FILES_PATH] = [busy, {"success": True, "result": FILES}]
+    cloud = TuyaCloud("id", "secret", "us")
+    with pytest.raises(TuyaCloudError, match=r"^2001: busy$"):
+        await cloud.realtime_map("dev")
+    assert await cloud.realtime_map("dev") == LAYOUT
+    assert http.urls().count(BASE + TOKEN_PATH) == 1
+
+
 async def test_a_map_without_layout_is_an_error(http):
     http.answers[BASE + FILES_PATH] = [{"success": True, "result": FILES[:1]}]
-    with pytest.raises(TuyaCloudError, match="no layout"):
+    with pytest.raises(TuyaCloudError, match=r"^no-layout: the realtime map has no layout file$"):
         await TuyaCloud("id", "secret", "us").realtime_map("dev")
 
 
 @pytest.mark.parametrize(
     ("path", "answer", "reason"),
     [
-        (TOKEN_PATH, {"success": True, "result": []}, "no access token"),
+        (TOKEN_PATH, {"success": True, "result": []}, r"^no-token: the token answer has no access token$"),
         (TOKEN_PATH, {"success": True, "result": {"access_token": 7}}, "no access token"),
         (TOKEN_PATH, [], "None: None"),
         (FILES_PATH, {"success": True}, "no layout"),
         (FILES_PATH, {"success": True, "result": {"map_type": 0}}, "no layout"),
         (FILES_PATH, {"success": True, "result": ["file", {"map_type": 0}]}, "no https address"),
-        (FILES_PATH, {"success": True, "result": [{"map_type": 0, "map_url": "file:///etc/passwd"}]}, "no https"),
+        (
+            FILES_PATH,
+            {"success": True, "result": [{"map_type": 0, "map_url": "file:///etc/passwd"}]},
+            r"^no-layout: the layout file has no https address: 'file:///etc/passwd'$",
+        ),
     ],
 )
 async def test_an_answer_of_the_wrong_shape_is_a_cloud_error(http, path, answer, reason):

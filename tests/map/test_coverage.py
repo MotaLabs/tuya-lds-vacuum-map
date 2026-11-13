@@ -96,14 +96,39 @@ def test_room_cells_keep_their_room():
     assert grid.get((18, 14)) == 1
 
 
+def test_the_coverage_lands_on_the_cloud_cells_under_it():
+    base = GridMap.from_cloud(cloud_payload(bytearray([CODES.unknown]) * (40 * 30)))
+    cov = coverage()
+    cov.paint([cell_center_mm(25, 14)])
+    grid = cov.apply(base, ())
+    disc = coverage()
+    disc.paint([(25, 25)])
+    painted = {(col, row) for row in range(30) for col in range(40) if grid.get((col, row)) != CODES.unknown}
+    assert painted == {(25 + col, 14 + row) for col, row in disc.cells}
+    assert {grid.get(cell) for cell in painted} == {CODES.floor}
+
+
 def test_without_a_cloud_map_the_coverage_draws_its_own_map():
     cov = coverage()
     cov.paint([(25, 25)])
     grid = cov.apply(None, ())
     assert (grid.width, grid.height) == (11, 11)
+    assert (grid.resolution, grid.x_min, grid.y_min) == (0.05, -0.25, -0.25)
     assert grid.value_at(25, 25) == CODES.floor
     assert grid.get((1, 5)) == CODES.wall
     assert grid.get((0, 0)) == CODES.unknown
+
+
+def test_without_a_cloud_map_walls_ring_the_covered_floor_and_nothing_else():
+    cov = coverage()
+    cov.paint([(25, 25), (525, 275)])
+    grid = cov.apply(None, ())
+    col0, row0 = round(grid.x_min / grid.resolution), round(grid.y_min / grid.resolution)
+    drawn = {(col + col0, row + row0): grid.get((col, row)) for row in range(grid.height) for col in range(grid.width)}
+    sides = ((1, 0), (-1, 0), (0, 1), (0, -1))
+    ring = {(col + dc, row + dr) for col, row in cov.cells for dc, dr in sides} - cov.cells
+    assert {cell for cell, value in drawn.items() if value == CODES.floor} == cov.cells
+    assert {cell for cell, value in drawn.items() if value == CODES.wall} == ring
 
 
 def test_moved_rooms_recolor_the_coverage():
@@ -129,6 +154,16 @@ def test_a_covered_floor_too_large_to_draw_is_left_out_and_reported_once(monkeyp
     assert cov.apply(None, ()) is None
     assert cov.apply(None, ()) is None
     assert caplog.text.count("too large to draw") == 1
+
+
+def test_a_covered_floor_exactly_at_the_size_limit_is_still_drawn(monkeypatch):
+    cov = coverage()
+    cov.paint([(0, 0)])
+    drawn = cov.apply(None, ())
+    monkeypatch.setattr(coverage_module, "MAX_CELLS", drawn.width * drawn.height)
+    assert cov.apply(None, ()) is not None
+    monkeypatch.setattr(coverage_module, "MAX_CELLS", drawn.width * drawn.height - 1)
+    assert cov.apply(None, ()) is None
 
 
 millimetres = st.integers(-20_000, 20_000)

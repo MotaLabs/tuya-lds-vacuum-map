@@ -70,6 +70,13 @@ anything else from a real home.
 - Code that reads outside input gets a property test with [Hypothesis](https://hypothesis.readthedocs.io/):
   any input is either read or refused with a `ValueError`. Shared strategies live in
   [tests/support/strategies.py](tests/support/strategies.py).
+- The map drawing is compared pixel by pixel with
+  [tests/map/render_reference.png](tests/map/render_reference.png): a scene with every kind of mark, drawn
+  with Pillow's bundled font so that it does not depend on the machine's fonts. It still depends on the
+  Pillow version in `uv.lock`, so a Pillow update can fail it with no change to the drawing. When the drawing
+  changes on purpose, or after such an update, `UPDATE_RENDER_REFERENCE=1 uv run pytest tests/map/test_render.py`
+  rewrites the reference; look at the new image before committing it. A failed comparison leaves the drawn
+  image in `reports/render_drawn.png`.
 - `uv run pytest --cov` measures branch coverage and fails under 95%.
 - Every run writes `reports/junit.xml`, and a run with `--cov` also writes `reports/coverage.xml`. CI
   publishes both as the `test-reports` artifact of the pull request.

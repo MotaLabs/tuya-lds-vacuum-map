@@ -1,5 +1,7 @@
 import dataclasses
 import io
+import os
+from pathlib import Path
 
 from PIL import Image, ImageFont
 
@@ -14,6 +16,7 @@ STYLE = Style()
 SCALE = STYLE.scale
 UNNAMED = (Room(1, ""), Room(2, ""))
 COLORS = {1: (200, 40, 40), 2: (40, 200, 40)}
+REFERENCE = Path(__file__).with_name("render_reference.png")
 
 
 def render(scene: Scene) -> Image.Image:
@@ -311,3 +314,57 @@ def test_the_spot_border_is_never_thinner_than_two_pixels(payload):
     x, y = to_map(points, *spot[0])
     column = [image.getpixel((x + 3, y + dy)) for dy in range(-6, 7)]
     assert sum(1 for pixel in column if pixel == STYLE.spot[:3]) == 2
+
+
+def reference_scene(grid: GridMap) -> Scene:
+    def square(col: int, row: int, size: int) -> tuple:
+        return tuple(tuple(vertex) for vertex in commands.spot_square(*cell_center_mm(col, row), size))
+
+    def cells(*pairs: tuple[int, int]) -> tuple:
+        return tuple(cell_center_mm(col, row) for col, row in pairs)
+
+    rooms = (
+        Room(1, "Left", pos=cell_center_mm(10, 21), fan="quiet", water=1),
+        Room(2, "junk", pos=cell_center_mm(29, 21), water=0),
+    )
+    areas = (
+        Area(1, "area", "normal", "Nook", cells((4, 4), (9, 4), (9, 9), (4, 9))),
+        Area(2, "", "forbid", "", cells((32, 4), (35, 4), (35, 7))),
+        Area(3, "area", "normal", "", cells((23, 4), (24, 4), (24, 5), (23, 5))),
+    )
+    return Scene(
+        grid,
+        rooms=rooms,
+        areas=areas,
+        path=list(cells((5, 15), (17, 15), (17, 12), (25, 12), (25, 16))),
+        robot=cell_center_mm(25, 16),
+        dock=cell_center_mm(35, 24),
+        spot=square(15, 7, 400),
+        preview_square=square(27, 8, 300),
+        preview_center=cell_center_mm(27, 8),
+        room_order={1: 1, 2: 12},
+        show_settings=True,
+        fan_labels={"quiet": "Quiet"},
+        water_labels={0: "Off", 1: "Low"},
+        room_colors={1: (0, 120, 200), 2: (40, 200, 40)},
+    )
+
+
+def test_the_drawing_matches_the_reference(monkeypatch, payload):
+    monkeypatch.setattr(render_module, "FONT_CANDIDATES", ())
+    render_module.load_font.cache_clear()
+    try:
+        png, _ = Renderer(CODES, Style(scale=8)).render(reference_scene(GridMap.from_cloud(payload)))
+    finally:
+        render_module.load_font.cache_clear()
+    drawn = Image.open(io.BytesIO(png)).convert("RGBA")
+    if os.environ.get("UPDATE_RENDER_REFERENCE"):
+        drawn.save(REFERENCE)
+    reference = Image.open(REFERENCE).convert("RGBA")
+    if drawn.size != reference.size or drawn.tobytes() != reference.tobytes():
+        Path("reports").mkdir(exist_ok=True)
+        drawn.save("reports/render_drawn.png")
+        raise AssertionError(
+            "the drawing differs from tests/map/render_reference.png; it is in reports/render_drawn.png, and "
+            "UPDATE_RENDER_REFERENCE=1 uv run pytest tests/map/test_render.py rewrites the reference"
+        )

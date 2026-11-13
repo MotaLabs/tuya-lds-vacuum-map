@@ -169,7 +169,7 @@ connection, the MQTT connection and the cloud project are shared.
 | `TUYA_CLOUD_CLIENT_ID`, `TUYA_CLOUD_CLIENT_SECRET`, `TUYA_CLOUD_REGION` | | | Cloud project; region is `us`, `eu`, `cn`, `in` or `sg`. Leave them out for local-only |
 | `LANGUAGE` | | `en` | `en`, `pt-BR` or the path to a translation `.toml`; texts missing from the file stay in English |
 | `DEVICE_NAME` | | `Vacuum map <id>` | With `TUYA_DEVICE_ID`: name of the Home Assistant device the entities belong to |
-| `DATA_DIR` | | `/data` | Where the last map, the rooms and the covered floor are kept between restarts, one folder per robot |
+| `DATA_DIR` | | `/data` | Where the last map, the rooms, the covered floor and the robot's last path are kept between restarts, one folder per robot |
 | `ROBOT_PROFILE` | | `lds-robot` | With `TUYA_DEVICE_ID`: a built-in [robot profile](#robot-profiles) or the path to a `.toml` file |
 | `MAP_SCALE` | | `4` | Image pixels per map cell |
 | `TOPIC_PREFIX` | | `tuya_lds_vacuum_map` | MQTT topics are `<prefix>/<device id>/...`, plus `<prefix>/availability` |

@@ -166,6 +166,14 @@ def test_a_covered_floor_exactly_at_the_size_limit_is_still_drawn(monkeypatch):
     assert cov.apply(None, ()) is None
 
 
+@pytest.mark.parametrize("other_y", [45, -195])
+def test_the_covered_floor_takes_the_room_nearest_in_a_straight_line(other_y):
+    cov = coverage()
+    cov.paint([(25, -75)])
+    near, other = Room(1, "Near", pos=(125, -75)), Room(2, "Other", pos=(25, other_y))
+    assert cov.apply(None, (near, other)).value_at(25, -75) == 1
+
+
 millimetres = st.integers(-20_000, 20_000)
 
 

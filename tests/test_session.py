@@ -47,6 +47,12 @@ async def test_room_list_republishes_the_room_options(harness):
     assert harness.session().unsaved
 
 
+async def test_the_map_source_select_offers_both_sources(harness):
+    await harness.session().publish_discovery()
+    config = json.loads(harness.client.last(f"homeassistant/select/tlvm_{DEVICE}_map_source/config"))
+    assert config["options"] == ["Automatic", "Local only"]
+
+
 async def test_statistics_reach_their_sensors(harness):
     await harness.dp(DPS.clean_time, 480)
     await harness.dp(DPS.total_count, 950)
@@ -749,8 +755,13 @@ def test_the_map_scale_and_font_reach_the_renderer(tmp_path):
 
 def test_device_info(harness, monkeypatch):
     monkeypatch.setattr("tuya_lds_vacuum_map.session.__version__", "9.9.9")
-    info = harness.session().device_info()
-    assert (info["model"], info["name"], info["sw_version"]) == ("lds-robot", "Vacuum map 123456", "9.9.9")
+    assert harness.session().device_info() == {
+        "identifiers": [f"tuya_lds_vacuum_map_{DEVICE}"],
+        "name": "Vacuum map 123456",
+        "manufacturer": "tuya-lds-vacuum-map",
+        "model": "lds-robot",
+        "sw_version": "9.9.9",
+    }
 
 
 async def select_right(harness: Harness) -> None:
@@ -815,7 +826,7 @@ async def test_bad_colors_and_no_selection_change_nothing(harness, caplog):
     await select_right(harness)
     await harness.message(session.topics.room_color_set, "blue")
     assert session.room_colors == before
-    assert "no room selected" in caplog.text
+    assert f"{DEVICE}: could not handle {session.topics.room_color_random}: no room selected" in caplog.messages
     assert "#rrggbb" in caplog.text
 
 

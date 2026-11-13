@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from hypothesis import example, given
 
+from support.ascii_locale import run_in_an_ascii_locale
 from support.strategies import profile_overrides
 from support.toml import toml_document
 from tuya_lds_vacuum_map.i18n import load_texts
@@ -78,6 +79,13 @@ def test_a_cycle_is_an_error(tmp_path):
     second.write_text(f'extends = "{first}"\nname = "second"\n')
     with pytest.raises(ProfileError, match="extends itself"):
         load_profile(str(first))
+
+
+def test_an_unknown_profile_lists_the_built_in_ones(monkeypatch):
+    monkeypatch.setattr("tuya_lds_vacuum_map.profiles.builtin_profiles", lambda: ["lds-robot", "other-robot"])
+    message = r"^unknown robot profile 'no-such-robot', built-in ones: lds-robot, other-robot$"
+    with pytest.raises(ProfileError, match=message):
+        load_profile("no-such-robot")
 
 
 def test_unknown_profiles_are_errors(tmp_path):
@@ -185,7 +193,15 @@ def test_a_data_point_left_out_stays_out(tmp_path):
     profile = load_profile(str(path))
     assert profile.data_points.room_mode is None
     assert profile.data_points.total_count is None
+    assert profile.description == ""
     assert (profile.units.time, profile.units.area) == ("s", "m²")
+
+
+def test_a_wrong_data_point_after_one_left_out_is_still_an_error(tmp_path):
+    path = tmp_path / "robot.toml"
+    path.write_text(MINIMAL_PROFILE.replace("raw = 3\n", 'raw = 3\nclean_time = "12"\n'))
+    with pytest.raises(ProfileError, match=re.escape("data_points.clean_time must be a whole number, not '12'")):
+        load_profile(str(path))
 
 
 def test_a_profile_can_change_the_units(tmp_path):
@@ -311,3 +327,14 @@ def test_a_water_level_key_with_a_leading_zero_alone_is_read(tmp_path):
     path = tmp_path / "robot.toml"
     path.write_text(MINIMAL_PROFILE + '[levels.water]\n"07" = "high"\n')
     assert load_profile(str(path)).levels.water == {7: "high"}
+
+
+def test_profiles_are_read_as_utf8_whatever_the_locale(tmp_path):
+    path = tmp_path / "robot.toml"
+    path.write_text('extends = "lds-robot"\ndescription = "Robô da sala"\n', encoding="utf-8")
+    code = (
+        "from tuya_lds_vacuum_map.profiles import load_profile\n"
+        "print(load_profile().units.area)\n"
+        f"print(load_profile({str(path)!r}).description)"
+    )
+    assert run_in_an_ascii_locale(code) == [load_profile().units.area, "Robô da sala"]

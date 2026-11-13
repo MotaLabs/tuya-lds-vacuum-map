@@ -8,7 +8,7 @@ from hypothesis import strategies as st
 
 from support.maps import CODES, HEIGHT, RESOLUTION, WIDTH, X_MIN, Y_MIN, build_cells, cell_center_mm, cloud_payload
 from support.strategies import json_values
-from tuya_lds_vacuum_map.map.grid import GridMap
+from tuya_lds_vacuum_map.map.grid import MAX_CELLS, GridMap
 
 
 def test_from_cloud_reads_the_layout(payload):
@@ -38,6 +38,12 @@ def test_cells_are_addressed_by_column_and_row(payload):
     assert grid.cell_of(*cell_center_mm(7, 23)) == (7, 23)
 
 
+def test_points_outside_the_grid_get_the_cells_outside_it(payload):
+    grid = GridMap.from_cloud(payload)
+    assert grid.cell_of(*cell_center_mm(-1, -1)) == (-1, -1)
+    assert grid.cell_of(*cell_center_mm(2000, 2000)) == (2000, 2000)
+
+
 def test_cells_outside_the_grid_are_none(payload):
     grid = GridMap.from_cloud(payload)
     assert grid.get((WIDTH, 0)) is None
@@ -63,7 +69,7 @@ def test_missing_dock_and_map_id():
 
 def test_wrong_cell_count_is_rejected():
     payload = cloud_payload(build_cells()[:-WIDTH])
-    with pytest.raises(ValueError, match="cells"):
+    with pytest.raises(ValueError, match=f"^map has {WIDTH * (HEIGHT - 1)} cells, expected {WIDTH * HEIGHT}$"):
         GridMap.from_cloud(payload)
 
 
@@ -91,6 +97,13 @@ def test_any_cells_decode_or_fail_with_a_value_error(width, height, raw):
         assert len(GridMap.from_cloud(data).cells) == width * height
 
 
+@pytest.mark.parametrize(("width", "height"), [(1, 1), (MAX_CELLS, 1)])
+def test_a_map_of_one_cell_or_of_the_most_cells_is_read(width, height):
+    raw = lz4.block.compress(bytes([CODES.unknown]) * (width * height), store_size=False)
+    data = {**cloud_payload()["data"], "width": width, "height": height, "map": base64.b64encode(raw).decode()}
+    assert len(GridMap.from_cloud(data).cells) == width * height
+
+
 def test_an_oversized_map_is_refused_before_decoding():
     with pytest.raises(ValueError, match="too large"):
         GridMap.from_cloud({**cloud_payload()["data"], "width": 1_000_000, "height": 1_000_000})
@@ -99,12 +112,13 @@ def test_an_oversized_map_is_refused_before_decoding():
 @pytest.mark.parametrize(
     ("change", "reason"),
     [
-        ({"map": None}, "cells are missing"),
+        ({"map": None}, ": the map cells are missing$"),
         ({"resolution": 0}, "not positive"),
         ({"resolution": "1e999"}, "not a finite number"),
         ({"x_min": 10**400}, "not a finite number"),
         ({"y_min": True}, "not a number"),
         ({"width": 0}, "empty or too large"),
+        ({"height": 0}, "empty or too large"),
     ],
 )
 def test_each_broken_field_is_named(change, reason):

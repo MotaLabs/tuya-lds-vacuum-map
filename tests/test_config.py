@@ -1,5 +1,6 @@
 import pytest
 
+from support.ascii_locale import run_in_an_ascii_locale
 from tuya_lds_vacuum_map.config import CloudCredentials, ConfigError, RobotSettings, Settings, Timing
 
 SHARED = {"HA_URL": "http://ha.local:8123", "HA_TOKEN": "token", "MQTT_HOST": "broker"}
@@ -53,10 +54,14 @@ def test_robots_must_be_configured_once(tmp_path):
 @pytest.mark.parametrize(
     ("text", "message"),
     [
-        ('[[robots]]\ndevice_id = "one"\n[[robots]]\ndevice_id = "one"\n', "more than once: one"),
+        (
+            '[[robots]]\ndevice_id = "one"\n[[robots]]\ndevice_id = "one"\n'
+            + '[[robots]]\ndevice_id = "two"\n[[robots]]\ndevice_id = "two"\n',
+            "^robot listed more than once: one, two$",
+        ),
         ("robots = []\n", "no robots"),
         ('[[robots]]\nname = "Hall"\n', "invalid robots file"),
-        ('[[robots]]\ndevice_id = ""\n', "needs a device_id"),
+        ('[[robots]]\ndevice_id = ""\n', ": every robot needs a device_id$"),
         ('[[robots]]\ndevice_id = "one"\nprofile = 3\n', "profile of one must be a profile name"),
         ('[[robots]]\ndevice_id = "one"\ncolour = "red"\n', "colour"),
         ("[[robots]\n", "invalid robots file"),
@@ -79,7 +84,10 @@ def test_missing_settings_are_listed():
 
 
 def test_the_cloud_needs_every_credential():
-    with pytest.raises(ConfigError, match="TUYA_CLOUD_REGION"):
+    with pytest.raises(
+        ConfigError,
+        match=r"^the cloud map needs all of TUYA_CLOUD_CLIENT_ID, TUYA_CLOUD_CLIENT_SECRET, TUYA_CLOUD_REGION$",
+    ):
         Settings.from_env({**REQUIRED, "TUYA_CLOUD_CLIENT_ID": "id", "TUYA_CLOUD_CLIENT_SECRET": "secret"})
     assert Settings.from_env({**REQUIRED, **CLOUD}).cloud == CloudCredentials("id", "secret", "us")
     with pytest.raises(ConfigError, match="unknown TUYA_CLOUD_REGION 'br', use one of: us, eu"):
@@ -110,3 +118,9 @@ def test_invalid_numbers_are_config_errors():
         Settings.from_env({**REQUIRED, "MQTT_PORT": "one"})
     with pytest.raises(ConfigError, match="invalid setting"):
         Settings.from_env({**REQUIRED, "RENDER_INTERVAL_SECONDS": "fast"})
+
+
+def test_the_robots_file_is_read_as_utf8_whatever_the_locale(tmp_path):
+    env = robots_file(tmp_path, '[[robots]]\ndevice_id = "one"\nname = "Suíte"\n')
+    code = f"from tuya_lds_vacuum_map.config import Settings\nprint(Settings.from_env({env!r}).robots[0].name)"
+    assert (Settings.from_env(env).robots[0].name, run_in_an_ascii_locale(code)) == ("Suíte", ["Suíte"])

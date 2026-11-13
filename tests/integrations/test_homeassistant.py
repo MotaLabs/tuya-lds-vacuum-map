@@ -120,9 +120,9 @@ async def test_a_refused_subscription_reconnects_ever_more_slowly(monkeypatch, c
         port = listener.sockets[0].getsockname()[1]
         ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
         task = asyncio.create_task(ha.run(["localtuya_status_update"], on_event))
-        await eventually(lambda: len(sleeps.delays) >= 4)
+        await eventually(lambda: len(sleeps.delays) >= 8)
         await stop(task)
-    assert sleeps.delays[:4] == [1, 2, 4, 8]
+    assert sleeps.delays[:8] == [1, 2, 4, 8, 16, 32, 60, 60]
     assert "connected to Home Assistant" not in caplog.text
     assert "Home Assistant connection lost: subscription failed: unknown" in caplog.text
 
@@ -429,3 +429,112 @@ async def test_a_refused_subscription_whose_handler_is_gone_still_raises_its_err
     ha._call = refused
     with pytest.raises(HomeAssistantError, match="subscribe_trigger failed: gone"):
         await ha.subscribe({"type": "subscribe_trigger"}, on_trigger)
+
+
+@pytest.mark.parametrize(
+    ("url", "websocket"),
+    [
+        ("http://ha.local:8123/", "ws://ha.local:8123/api/websocket"),
+        ("https://http-proxy.local/", "wss://http-proxy.local/api/websocket"),
+        ("http://NAS-BOX/", "ws://NAS-BOX/api/websocket"),
+    ],
+)
+def test_the_websocket_url_comes_from_the_home_assistant_url(url, websocket):
+    assert HomeAssistant(url, "secret").url == websocket
+
+
+async def test_services_and_events_go_out_with_their_fields_and_ids_that_grow():
+    received: list[dict] = []
+    answers = {"call_service": {"success": True}, "fire_event": {"success": True}}
+    async with serve(answering_server(answers, received=received), "127.0.0.1", 0) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
+        task = asyncio.create_task(ha.run([], no_event))
+        await ha.call_service("localtuya", "set_dp", {"dp": 127})
+        await ha.fire_event("custom", {"room": 1})
+        await stop(task)
+    assert [{key: value for key, value in message.items() if key != "id"} for message in received] == [
+        {"type": "call_service", "domain": "localtuya", "service": "set_dp", "service_data": {"dp": 127}},
+        {"type": "fire_event", "event_type": "custom", "event_data": {"room": 1}},
+    ]
+    ids = [message["id"] for message in received]
+    assert all(isinstance(message_id, int) for message_id in ids)
+    assert ids[0] < ids[1]
+
+
+async def test_a_refused_service_names_itself_and_the_error():
+    answers = {"call_service": {"success": False, "error": "unknown service"}}
+    async with serve(answering_server(answers), "127.0.0.1", 0) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
+        task = asyncio.create_task(ha.run([], no_event))
+        with pytest.raises(HomeAssistantError, match=r"^localtuya\.set_dp failed: unknown service$"):
+            await ha.call_service("localtuya", "set_dp", {"dp": 127})
+        await stop(task)
+
+
+async def test_an_answer_larger_than_a_mebibyte_is_read():
+    big = ["x" * 2_000_000]
+    answers = {"config/entity_registry/list": {"success": True, "result": big}}
+    async with serve(answering_server(answers), "127.0.0.1", 0, max_size=None) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
+        task = asyncio.create_task(ha.run([], no_event))
+        assert await ha.request({"type": "config/entity_registry/list"}) == big
+        await stop(task)
+
+
+async def test_a_result_for_an_id_nobody_waits_for_is_skipped():
+    async def server(ws) -> None:
+        await ws.send(json.dumps({"type": "auth_required"}))
+        await ws.recv()
+        await ws.send(json.dumps({"type": "auth_ok"}))
+        async for raw in ws:
+            message = json.loads(raw)
+            await ws.send(json.dumps({"id": 999, "type": "result", "success": True, "result": None}))
+            await ws.send(json.dumps({"id": message["id"], "type": "result", "success": True, "result": "ok"}))
+
+    async with serve(server, "127.0.0.1", 0) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
+        task = asyncio.create_task(ha.run([], no_event))
+        async with asyncio.timeout(5):
+            assert await ha.request({"type": "ping"}) == "ok"
+        await stop(task)
+
+
+async def test_a_call_left_unanswered_when_the_connection_drops_is_lost():
+    async def server(ws) -> None:
+        await ws.send(json.dumps({"type": "auth_required"}))
+        await ws.recv()
+        await ws.send(json.dumps({"type": "auth_ok"}))
+        await ws.recv()
+
+    async with serve(server, "127.0.0.1", 0) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
+        task = asyncio.create_task(ha.run([], no_event))
+        with pytest.raises(HomeAssistantError, match=r"^connection lost$"):
+            await ha.call_service("localtuya", "set_dp", {"dp": 127})
+        await stop(task)
+
+
+async def test_a_call_with_no_answer_gives_up_after_the_call_timeout(monkeypatch):
+    monkeypatch.setattr(homeassistant, "CALL_TIMEOUT_SECONDS", 0.1)
+
+    async def server(ws) -> None:
+        await ws.send(json.dumps({"type": "auth_required"}))
+        await ws.recv()
+        await ws.send(json.dumps({"type": "auth_ok"}))
+        await ws.wait_closed()
+
+    async with serve(server, "127.0.0.1", 0) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
+        task = asyncio.create_task(ha.run([], no_event))
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(ha.call_service("localtuya", "set_dp", {"dp": 127}), 3)
+        assert loop.time() - started < 1
+        await stop(task)

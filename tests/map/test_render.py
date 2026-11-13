@@ -1,7 +1,7 @@
 import dataclasses
 import io
 
-from PIL import Image
+from PIL import Image, ImageFont
 
 from support.maps import CODES, HEIGHT, WIDTH, build_cells, cell_center_mm, cloud_payload
 from tuya_lds_vacuum_map.lds import commands
@@ -270,3 +270,19 @@ def test_overlays_land_where_the_calibration_says_on_a_map_drawn_smaller(monkeyp
     robot = cell_center_mm(10, 20)
     image, points = Renderer(CODES, STYLE).render(Scene(grid, rooms=UNNAMED, room_colors=COLORS, robot=robot))
     assert Image.open(io.BytesIO(image)).convert("RGB").getpixel(to_map(points, *robot)) == (60, 60, 60)
+
+
+def test_labels_are_drawn_with_the_configured_font(monkeypatch, payload):
+    paths: list[str | None] = []
+
+    def font(size: int, path: str | None = None) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+        paths.append(path)
+        return ImageFont.load_default(size=size)
+
+    monkeypatch.setattr(render_module, "load_font", font)
+    grid = GridMap.from_cloud(payload)
+    Renderer(CODES, Style(font_path="/fonts/labels.ttf")).render(
+        Scene(grid, rooms=(Room(1, "Left", pos=cell_center_mm(10, 14)),))
+    )
+    assert paths
+    assert set(paths) == {"/fonts/labels.ttf"}

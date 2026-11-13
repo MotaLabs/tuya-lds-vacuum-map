@@ -301,3 +301,13 @@ def test_a_fan_setting_shows_a_fan_and_a_water_setting_a_drop(payload):
     assert colors(Room(1, "Left", pos=pos, fan="quiet")) == {STYLE.fan[:3]}
     assert colors(Room(1, "Left", pos=pos, water=1)) == {STYLE.water[:3]}
     assert colors(Room(1, "Left", pos=pos, fan="quiet", water=1)) == {STYLE.fan[:3], STYLE.water[:3]}
+
+
+def test_the_spot_border_is_never_thinner_than_two_pixels(payload):
+    grid = GridMap.from_cloud(payload)
+    spot = tuple(tuple(vertex) for vertex in commands.spot_square(*cell_center_mm(10, 14), 500))
+    png, points = Renderer(CODES, Style(scale=2)).render(Scene(grid, rooms=UNNAMED, room_colors=COLORS, spot=spot))
+    image = Image.open(io.BytesIO(png)).convert("RGB")
+    x, y = to_map(points, *spot[0])
+    column = [image.getpixel((x + 3, y + dy)) for dy in range(-6, 7)]
+    assert sum(1 for pixel in column if pixel == STYLE.spot[:3]) == 2

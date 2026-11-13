@@ -10,6 +10,7 @@ def model(payload: dict | None = None) -> MapModel:
 
 def test_without_any_map_there_is_nothing_to_draw():
     empty = model()
+    assert (empty.cloud_payload, empty.view) == (None, None)
     assert empty.compose(()) is None
     assert (empty.dock, empty.map_id) == (None, None)
 

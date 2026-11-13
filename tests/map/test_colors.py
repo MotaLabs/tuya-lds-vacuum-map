@@ -6,7 +6,8 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from tuya_lds_vacuum_map.map.colors import format_color, parse_color, random_color
+from support.fakes import ScriptedRandom
+from tuya_lds_vacuum_map.map.colors import HUE_CANDIDATES, format_color, parse_color, random_color
 
 
 def hue(color: tuple[int, int, int]) -> float:
@@ -47,6 +48,18 @@ def test_repeated_draws_spread_over_a_wide_free_gap():
     hues = {round(hue(random_color(used, random.Random(seed))), 1) for seed in range(30)}
     assert hues <= {0.5, 0.6, 0.7, 0.8, 0.9}
     assert len(hues) >= 3
+
+
+@pytest.mark.parametrize(("drawn", "color"), [(0.0, (185, 70, 70)), (1 / 3, (70, 185, 70)), (2 / 3, (70, 70, 185))])
+def test_the_color_is_the_drawn_hue_at_the_lowest_lightness_and_saturation(drawn, color):
+    assert random_color([], ScriptedRandom([drawn] * HUE_CANDIDATES)) == color
+
+
+def test_a_hue_half_as_far_as_the_farthest_is_still_a_candidate():
+    draws = [0.5] + [0.25] * (HUE_CANDIDATES - 1)
+    rng = ScriptedRandom(draws)
+    random_color([(255, 0, 0)], rng)
+    assert rng.choices == [draws]
 
 
 def test_the_same_seed_gives_the_same_color():

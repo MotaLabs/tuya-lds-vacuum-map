@@ -53,3 +53,19 @@ class FakeCloud:
         if self.error:
             raise self.error
         return dict(self.points)
+
+
+class ScriptedRandom:
+    def __init__(self, draws: list[float]) -> None:
+        self.draws = iter(draws)
+        self.choices: list[list[float]] = []
+
+    def random(self) -> float:
+        return next(self.draws)
+
+    def choice(self, options: list[float]) -> float:
+        self.choices.append(options)
+        return options[0]
+
+    def uniform(self, low: float, high: float) -> float:
+        return low

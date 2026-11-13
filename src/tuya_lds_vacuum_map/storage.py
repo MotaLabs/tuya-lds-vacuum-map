@@ -23,6 +23,7 @@ class Snapshot:
     coverage: list[int] = field(default_factory=list)
     path_id: Any = None
     path: list[list[int]] = field(default_factory=list)
+    path_start: int = 0
     room_colors: dict[str, str] = field(default_factory=dict)
     auto_start: bool = True
     start_delay: float = 10.0

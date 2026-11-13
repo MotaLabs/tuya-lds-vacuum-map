@@ -64,7 +64,7 @@ def test_any_split_into_chunks_rebuilds_the_path(points, data):
 
 def test_a_restored_path_goes_on_with_its_id_and_starts_over_with_another():
     tracker = PathTracker()
-    tracker.restore(1, [[0, 0], [10, 0]])
+    tracker.restore(1, [[0, 0], [10, 0]], 0)
     assert (tracker.path_id, tracker.points, tracker.position) == (1, [(0, 0), (10, 0)], (10, 0))
     assert tracker.update(chunk(1, 2, [[20, 0]])) == [(10, 0), (20, 0)]
     tracker.update(chunk(2, 0, [[5, 5]]))
@@ -73,7 +73,7 @@ def test_a_restored_path_goes_on_with_its_id_and_starts_over_with_another():
 
 def test_a_restored_path_that_is_not_a_list_is_empty():
     tracker = PathTracker()
-    tracker.restore(4, {"x": 0})
+    tracker.restore(4, {"x": 0}, 0)
     assert (tracker.path_id, tracker.points) == (4, [])
 
 
@@ -81,13 +81,13 @@ def test_a_restored_path_with_a_bad_point_is_refused_and_changes_nothing():
     tracker = PathTracker()
     tracker.update(chunk(1, 0, [[0, 0]]))
     with pytest.raises(ValueError, match="not a number"):
-        tracker.restore(2, [[10, 0], [None, 1]])
+        tracker.restore(2, [[10, 0], [None, 1]], 0)
     assert (tracker.path_id, tracker.points) == (1, [(0, 0)])
 
 
 def test_a_chunk_past_the_end_starts_the_drawn_path_over_and_the_next_ones_line_up():
     tracker = PathTracker()
-    tracker.restore(1, [[0, 0], [10, 0]])
+    tracker.restore(1, [[0, 0], [10, 0]], 0)
     assert tracker.update(chunk(1, 5, [[100, 100], [110, 100]])) == [(100, 100), (110, 100)]
     assert tracker.points == [(100, 100), (110, 100)]
     assert tracker.update(chunk(1, 7, [[120, 100]])) == [(110, 100), (120, 100)]
@@ -106,7 +106,7 @@ def test_a_gap_of_one_point_starts_over_too():
 
 def test_the_whole_path_sent_again_after_a_gap_replaces_it():
     tracker = PathTracker()
-    tracker.restore(1, [[0, 0]])
+    tracker.restore(1, [[0, 0]], 0)
     tracker.update(chunk(1, 4, [[50, 50]]))
     assert tracker.update(chunk(1, 0, [[1, 1], [2, 2]])) == [(1, 1), (2, 2)]
     assert tracker.points == [(1, 1), (2, 2)]
@@ -118,3 +118,32 @@ def test_a_total_that_ends_before_the_kept_points_drops_them_all():
     tracker.update(chunk(1, 5, [[50, 50]]))
     tracker.update(chunk(1, 5, [[51, 51]], total=5))
     assert tracker.points == []
+
+
+def test_a_total_that_ends_before_the_offset_drops_every_kept_point():
+    tracker = PathTracker()
+    tracker.update(chunk(1, 5, [[50, 50], [51, 51], [52, 52]]))
+    tracker.update(chunk(1, 8, [[53, 53]], total=4))
+    assert tracker.points == []
+
+
+def test_a_path_restored_with_its_start_lines_up_with_the_robots_chunks():
+    tracker = PathTracker()
+    tracker.restore(1, [[50, 0], [51, 0]], 50)
+    assert tracker.update(chunk(1, 52, [[52, 0]])) == [(51, 0), (52, 0)]
+    assert tracker.update(chunk(1, 51, [[51, 5]])) == [(50, 0), (51, 5)]
+    assert tracker.points == [(50, 0), (51, 5)]
+    assert tracker.update(chunk(1, 3, [[3, 0]])) == [(3, 0)]
+    assert (tracker.points, tracker.offset) == ([(3, 0)], 3)
+
+
+@pytest.mark.parametrize(
+    ("start", "reason"),
+    [(-1, "cannot start before 0"), (None, "not a number"), ("x", "invalid literal"), ([0], "not a number")],
+)
+def test_a_restored_start_that_is_not_a_whole_number_from_0_is_refused(start, reason):
+    tracker = PathTracker()
+    tracker.update(chunk(1, 0, [[0, 0]]))
+    with pytest.raises(ValueError, match=reason):
+        tracker.restore(2, [[10, 0]], start)
+    assert (tracker.path_id, tracker.points, tracker.offset) == (1, [(0, 0)], 0)

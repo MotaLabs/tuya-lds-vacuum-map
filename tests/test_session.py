@@ -629,6 +629,12 @@ async def test_a_restart_during_a_cleaning_paints_no_band_across_the_points_it_m
     assert (60, 0) in cells
     assert (30, 0) not in cells
     assert second.session().robot.path.points == [(3000, 0), (3050, 0)]
+    second.session().save()
+    third = Harness(tmp_path)
+    assert (third.session().robot.path.offset, third.session().robot.path.points) == (40, [(3000, 0), (3050, 0)])
+    resent = {"infoType": 21011, "data": {"pathID": 1, "startPos": 41, "posArray": [[3060, 0]]}}
+    await third.dp(DPS.path, encode_raw(resent))
+    assert third.session().robot.path.points == [(3000, 0), (3060, 0)]
 
 
 async def test_a_saved_path_that_cannot_be_read_is_dropped(tmp_path, caplog):

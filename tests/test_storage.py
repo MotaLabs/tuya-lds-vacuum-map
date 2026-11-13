@@ -20,6 +20,7 @@ def test_snapshot_round_trip(tmp_path):
         coverage=[1, 2, 3, 4],
         path_id=7,
         path=[[0, 0], [10, -20]],
+        path_start=12,
     )
     storage.save(snapshot)
     assert storage.load() == snapshot

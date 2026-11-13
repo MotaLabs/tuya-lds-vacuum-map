@@ -170,3 +170,17 @@ def test_no_data_point_value_breaks_the_robot(data_points):
 def test_no_raw_message_breaks_the_robot(message):
     robot = Robot(PROFILE)
     robot.apply({DPS.raw: encode_raw(message), DPS.path: encode_raw(message)})
+
+
+def test_the_status_data_points_are_the_state_the_room_mode_and_the_statistics():
+    assert Robot(PROFILE).status_dps == {
+        DPS.state,
+        DPS.room_mode,
+        DPS.clean_time,
+        DPS.clean_area,
+        DPS.total_time,
+        DPS.total_area,
+        DPS.total_count,
+    }
+    bare = dataclasses.replace(PROFILE, data_points=DataPoints(state=1, path=2, raw=3))
+    assert Robot(bare).status_dps == {1}

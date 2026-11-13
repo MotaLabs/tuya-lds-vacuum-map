@@ -1,12 +1,11 @@
 import asyncio
 import contextlib
-import http.client
 import logging
 from collections.abc import Callable
 from typing import Any
 
 from .config import Timing
-from .integrations.tuya_cloud import TuyaCloud, TuyaCloudError
+from .integrations.tuya_cloud import ERRORS, TuyaCloud
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +49,7 @@ class CloudMapSync:
     async def fetch(self) -> None:
         try:
             payload = await self.cloud.realtime_map(self.device_id)
-        except (TuyaCloudError, OSError, ValueError, http.client.HTTPException) as error:
+        except ERRORS as error:
             log.warning("cloud map for %s unavailable: %s", self.device_id, error)
             return
         self.on_payload(payload)

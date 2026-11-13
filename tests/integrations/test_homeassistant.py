@@ -246,3 +246,186 @@ async def test_a_rejected_token_is_reported(caplog):
         await eventually(lambda: "authentication failed: auth_invalid" in caplog.text)
         assert not ha.connected.is_set()
         await stop(task)
+
+
+async def test_ready_runs_on_every_connection(monkeypatch):
+    monkeypatch.setattr(homeassistant, "asyncio", RecordedSleeps())
+    readies: list[bool] = []
+
+    async def server(ws) -> None:
+        await ws.send(json.dumps({"type": "auth_required"}))
+        await ws.recv()
+        await ws.send(json.dumps({"type": "auth_ok"}))
+        message = json.loads(await ws.recv())
+        await ws.send(json.dumps({"id": message["id"], "type": "result", "success": True}))
+        await ws.close(1001)
+
+    async def on_event(event_type: str, data: dict) -> None:
+        raise AssertionError(event_type)
+
+    async def on_ready() -> None:
+        readies.append(ha.connected.is_set())
+
+    async with serve(server, "127.0.0.1", 0) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
+        task = asyncio.create_task(ha.run(["localtuya_status_update"], on_event, on_ready))
+        await eventually(lambda: len(readies) >= 2)
+        await stop(task)
+    assert all(readies)
+
+
+async def test_ready_runs_on_a_connection_without_subscriptions(monkeypatch):
+    monkeypatch.setattr(homeassistant, "asyncio", RecordedSleeps())
+    readies: list[bool] = []
+
+    async def server(ws) -> None:
+        await ws.send(json.dumps({"type": "auth_required"}))
+        await ws.recv()
+        await ws.send(json.dumps({"type": "auth_ok"}))
+        await ws.wait_closed()
+
+    async def on_event(event_type: str, data: dict) -> None:
+        raise AssertionError(event_type)
+
+    async def on_ready() -> None:
+        readies.append(ha.connected.is_set())
+
+    async with serve(server, "127.0.0.1", 0) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
+        task = asyncio.create_task(ha.run([], on_event, on_ready))
+        await eventually(lambda: readies == [True])
+        await stop(task)
+
+
+def answering_server(answers: dict[str, dict], events: dict[str, list] | None = None, received: list | None = None):
+    async def server(ws) -> None:
+        await ws.send(json.dumps({"type": "auth_required"}))
+        await ws.recv()
+        await ws.send(json.dumps({"type": "auth_ok"}))
+        async for raw in ws:
+            message = json.loads(raw)
+            if received is not None:
+                received.append(message)
+            await ws.send(json.dumps({"id": message["id"], "type": "result", **answers[message["type"]]}))
+            for event in (events or {}).get(message["type"], []):
+                await ws.send(json.dumps({"id": message["id"], "type": "event", "event": event}))
+
+    return server
+
+
+async def no_event(event_type: str, data: dict) -> None:
+    raise AssertionError(event_type)
+
+
+async def test_a_request_returns_its_result_or_raises_its_error():
+    answers = {
+        "config/entity_registry/list": {"success": True, "result": [{"entity_id": "vacuum.robot"}]},
+        "config/device_registry/list": {"success": False, "error": {"code": "unauthorized"}},
+    }
+    async with serve(answering_server(answers), "127.0.0.1", 0) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
+        task = asyncio.create_task(ha.run([], no_event))
+        assert await ha.request({"type": "config/entity_registry/list"}) == [{"entity_id": "vacuum.robot"}]
+        with pytest.raises(HomeAssistantError, match=r"config/device_registry/list failed: .*unauthorized"):
+            await ha.request({"type": "config/device_registry/list"})
+        await stop(task)
+
+
+async def test_a_subscription_sends_its_events_to_its_handler_and_bus_events_go_on():
+    received: list[dict] = []
+    events: list[tuple] = []
+    triggers: list = []
+    answers = {"subscribe_events": {"success": True}, "subscribe_trigger": {"success": True}}
+    sent = {
+        "subscribe_events": [{"event_type": "localtuya_status_update", "data": {"dp": 105}}],
+        "subscribe_trigger": [{"variables": {"trigger": {"platform": "state"}}}, None],
+    }
+
+    async def on_event(event_type: str, data: dict) -> None:
+        events.append((event_type, data))
+
+    async def on_trigger(message) -> None:
+        triggers.append(message)
+
+    async with serve(answering_server(answers, sent, received), "127.0.0.1", 0) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
+        task = asyncio.create_task(ha.run(["localtuya_status_update"], on_event))
+        await ha.subscribe({"type": "subscribe_trigger", "trigger": {"platform": "state"}}, on_trigger)
+        await eventually(lambda: len(triggers) == 2 and len(events) == 1)
+        await stop(task)
+    assert [message["type"] for message in received] == ["subscribe_events", "subscribe_trigger"]
+    assert triggers == [{"variables": {"trigger": {"platform": "state"}}}, None]
+    assert events == [("localtuya_status_update", {"dp": 105})]
+
+
+async def test_a_refused_subscription_raises_and_keeps_no_handler():
+    answers = {"subscribe_trigger": {"success": False, "error": {"code": "invalid_format"}}}
+
+    async def on_trigger(message) -> None:
+        raise AssertionError(message)
+
+    async with serve(answering_server(answers), "127.0.0.1", 0) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
+        task = asyncio.create_task(ha.run([], no_event))
+        with pytest.raises(HomeAssistantError, match=r"subscribe_trigger failed: .*invalid_format"):
+            await ha.subscribe({"type": "subscribe_trigger"}, on_trigger)
+        assert ha._handlers == {}
+        await stop(task)
+
+
+async def test_a_lost_connection_drops_every_subscription_handler(monkeypatch):
+    monkeypatch.setattr(homeassistant, "asyncio", RecordedSleeps())
+    connections: list = []
+
+    async def server(ws) -> None:
+        connections.append(ws)
+        await ws.send(json.dumps({"type": "auth_required"}))
+        await ws.recv()
+        await ws.send(json.dumps({"type": "auth_ok"}))
+        message = json.loads(await ws.recv())
+        await ws.send(json.dumps({"id": message["id"], "type": "result", "success": True}))
+        await ws.close(1001)
+
+    async def on_trigger(message) -> None:
+        raise AssertionError(message)
+
+    async with serve(server, "127.0.0.1", 0) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
+        task = asyncio.create_task(ha.run([], no_event))
+        await ha.subscribe({"type": "subscribe_trigger"}, on_trigger)
+        await eventually(lambda: len(connections) >= 2)
+        assert ha._handlers == {}
+        await stop(task)
+
+
+async def test_a_subscription_on_a_closed_connection_keeps_no_handler():
+    ha = HomeAssistant("http://127.0.0.1:1", "secret")
+    ha._ws = ClosedSocket()
+    ha.connected.set()
+
+    async def on_trigger(message) -> None:
+        raise AssertionError(message)
+
+    with pytest.raises(HomeAssistantError, match="websocket closed"):
+        await ha.subscribe({"type": "subscribe_trigger"}, on_trigger)
+    assert ha._handlers == {}
+
+
+async def test_a_refused_subscription_whose_handler_is_gone_still_raises_its_error():
+    ha = HomeAssistant("http://127.0.0.1:1", "secret")
+
+    async def refused(payload: dict, handler=None) -> dict:
+        return {"id": 7, "type": "result", "success": False, "error": "gone"}
+
+    async def on_trigger(message) -> None:
+        raise AssertionError(message)
+
+    ha._call = refused
+    with pytest.raises(HomeAssistantError, match="subscribe_trigger failed: gone"):
+        await ha.subscribe({"type": "subscribe_trigger"}, on_trigger)

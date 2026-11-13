@@ -45,6 +45,8 @@ class Robot:
             for name in STATISTICS
             if getattr(profile.data_points, name) is not None
         }
+        dps = profile.data_points
+        self.status_dps = frozenset(dp for dp in (dps.state, dps.room_mode, *self.statistic_dps) if dp is not None)
 
     @property
     def moving(self) -> bool:

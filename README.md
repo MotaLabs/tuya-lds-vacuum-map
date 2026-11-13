@@ -45,7 +45,7 @@ flowchart LR
     robot -. uploads map .-> cloud[Tuya cloud]
     localtuya -- events --> ha[Home Assistant]
     ha -- websocket events --> service[tuya-lds-vacuum-map]
-    cloud -. realtime map .-> service
+    cloud -. realtime map, status .-> service
     service -- MQTT: camera, selects --> mqtt[(MQTT broker)]
     mqtt --> ha
     card[xiaomi-vacuum-map-card] -- taps via mqtt.publish --> mqtt
@@ -55,7 +55,12 @@ flowchart LR
 
 1. LocalTuya already receives everything the robot sends. The service listens to those events through the
    Home Assistant websocket: the robot state, the live path (DP 123) and the room list, areas and commands
-   (DP 127).
+   (DP 127). LocalTuya fires an event only when a value changes, and not for the first status it reads after
+   setting the robot up, so whatever the robot changed while LocalTuya could not reach it would wait for its
+   next change. When the service connects to Home Assistant, and each time one of the robot's LocalTuya
+   entities comes back from unavailable, it reads the robot's state, room mode and statistics from the Tuya
+   cloud, if a cloud project is configured and the map source is Automatic. A cloud value replaces the
+   service's only when the robot reported it after the value the service last got from LocalTuya.
 2. When a cloud project is configured, it downloads the robot's realtime map from the Tuya cloud during and
    after each cleaning. The map is a grid of 5 cm cells where each cell holds a room id, a wall or nothing.
 3. It draws the map with Pillow, flipped and coloured like the app, adds names, settings, areas, the dock,
@@ -306,7 +311,7 @@ fit in the same card.
 
 | Mode | Cloud calls | What is drawn |
 |---|---|---|
-| Automatic | During and after each cleaning, and every 6 h | The latest cloud map, plus the floor covered since it was fetched |
+| Automatic | The map during and after each cleaning and every 6 h; the robot's status when the service connects to Home Assistant and when LocalTuya reaches the robot again | The latest cloud map, plus the floor covered since it was fetched |
 | Local only | None | The last cloud map saved, plus every bit of floor the robot covered since; with no saved map, only the covered floor |
 
 If the cloud stops answering, for example when the IoT Core subscription expires, Automatic keeps drawing

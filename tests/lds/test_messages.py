@@ -57,6 +57,34 @@ def test_path_chunk_only_for_path_messages():
     assert path_chunk({"infoType": 21004, "data": {}}) is None
 
 
+def test_an_empty_name_finds_no_room_even_one_without_a_name():
+    parsed = parse_room_list({"infoType": 21004, "data": {"autoAreaValue": [{"id": 3, "name": ""}]}})
+    assert parsed.room_named("") is None
+
+
+def test_a_room_keeps_its_clean_type():
+    room = {"id": 3, "name": "2b+2p+30+2p", "cleanType": "sweepOnly"}
+    parsed = parse_room_list({"infoType": 21004, "data": {"autoAreaValue": [room]}})
+    assert parsed.rooms[0].clean_type == "sweepOnly"
+
+
+def test_an_area_without_id_mode_or_state_gets_empty_ones():
+    area = {"vertexs": [[0, 0], [100, 0], [100, 100]]}
+    [parsed] = parse_room_list({"infoType": 21004, "data": {"value": [area]}}).areas
+    assert (parsed.id, parsed.mode, parsed.active) == (0, "", "")
+
+
+def test_the_spot_is_found_after_other_commands():
+    message = decode_raw(commands.clean_spot(7, 0, 0, 1500, now_ms=1))
+    message["data"]["cmds"].insert(0, {"infoType": 1, "data": {}})
+    assert spot_in_commands(message) == ((-750, -750), (750, -750), (750, 750), (-750, 750))
+
+
+def test_a_chunk_without_a_start_starts_at_0_and_a_total_of_0_is_kept():
+    data = {"pathID": 1, "posArray": [[0, 0]], "totalPoints": 0}
+    assert path_chunk({"infoType": 21011, "data": data}) == PathChunk(1, 0, ((0, 0),), 0)
+
+
 def test_fields_of_the_wrong_kind_are_dropped():
     message = rooms_message()
     message["data"]["autoAreaValue"][0].update(fanLevel=["quiet"], waterPump=None, cleanType=3)

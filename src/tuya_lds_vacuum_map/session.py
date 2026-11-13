@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from . import __version__
 from .cloud_sync import CloudMapSync
 from .config import RobotSettings, Settings
 from .gestures import START_DELAY_RANGE, RoomPicker, SpotPicker, TapController, TapMode, start_delay
@@ -260,6 +261,7 @@ class RobotSession:
             "name": self.config.name or f"Vacuum map {self.device_id[-6:]}",
             "manufacturer": "tuya-lds-vacuum-map",
             "model": self.profile.name,
+            "sw_version": __version__,
         }
 
     async def publish_discovery(self) -> None:

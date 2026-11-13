@@ -47,7 +47,12 @@ jobs:
       TAG: tuya-lds-vacuum-map:pr-${{ github.event.pull_request.number }}
     steps:
       - uses: actions/checkout@v7
-      - run: docker build --pull --tag "$TAG" .
+      - run: docker build --pull --build-arg VERSION=1.2.3 --tag "$TAG" .
+      - name: The package in the image carries the version it was built with
+        run: |
+          set -euo pipefail
+          built=$(docker run --rm "$TAG" python -c 'import tuya_lds_vacuum_map; print(tuya_lds_vacuum_map.__version__)')
+          test "$built" = 1.2.3 || { echo "::error::The image says $built, not 1.2.3"; exit 1; }
 
   conventional-commits:
     name: Conventional Commits, title and commits

@@ -4,6 +4,7 @@ import os
 import signal
 import sys
 
+from . import __version__
 from .app import App
 from .config import ConfigError, Settings
 from .i18n import TranslationError, load_texts
@@ -27,6 +28,7 @@ def main() -> None:
     logging.basicConfig(
         level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
+    log.info("tuya-lds-vacuum-map %s", __version__)
     try:
         settings = Settings.from_env()
         profiles = {robot.profile: load_profile(robot.profile) for robot in settings.robots}

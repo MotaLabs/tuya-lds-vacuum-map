@@ -131,8 +131,10 @@ then `./vacuum-map:/data`); a folder Docker creates for a bind mount belongs to 
 saved, which the log says on every attempt.
 
 Every release publishes the image with three tags: the version (`0.1.0`), the git tag (`v0.1.0`) and
-`latest`. To run a change that is not released yet, build it from this repository with `docker build -t
-tuya-lds-vacuum-map .`.
+`latest`. The package inside carries the same version: the service logs it when it starts, and Home
+Assistant shows it as the firmware of the map's device. To run a change that is not released yet,
+build it from this repository with `docker build -t tuya-lds-vacuum-map .`; that image says `0.0.0`
+unless it is built with `--build-arg VERSION=<version>`.
 
 ### Several robots
 

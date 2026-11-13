@@ -1,4 +1,6 @@
-from ..lds.messages import PathChunk
+from typing import Any
+
+from ..lds.messages import PathChunk, as_points
 from .grid import Point
 
 
@@ -6,6 +8,10 @@ class PathTracker:
     def __init__(self) -> None:
         self.path_id: object = None
         self.points: list[Point] = []
+
+    def restore(self, path_id: object, points: Any) -> None:
+        self.points = list(as_points(points))
+        self.path_id = path_id
 
     @property
     def position(self) -> Point | None:

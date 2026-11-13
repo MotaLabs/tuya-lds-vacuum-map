@@ -612,6 +612,16 @@ async def test_state_survives_a_restart(tmp_path):
     assert (second.robot.room_mode, second.snapshot.selected_room) == (True, "Right")
     assert (second.robot.state, second.snapshot.source, second.map.map_id) == ("totaling", MapSource.LOCAL, 42)
     assert second.map.coverage.cells == first.session().map.coverage.cells
+    assert (second.robot.path.path_id, second.robot.path.points) == (1, [(0, 0)])
+    assert second.scene().path == [(0, 0)]
+
+
+async def test_a_saved_path_that_cannot_be_read_is_dropped(tmp_path, caplog):
+    Storage(tmp_path / DEVICE / "state.json").save(Snapshot(robot_state="idle", path_id=3, path=[[None, 0]]))
+    session = Harness(tmp_path).session()
+    assert (session.robot.path.path_id, session.robot.path.points) == (None, [])
+    assert session.robot.state == "idle"
+    assert "the saved path could not be read: not a number" in caplog.text
 
 
 def test_level_labels_follow_the_profile_and_language(tmp_path):

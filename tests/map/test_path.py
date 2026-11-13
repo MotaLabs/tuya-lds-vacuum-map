@@ -1,3 +1,4 @@
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -59,3 +60,26 @@ def test_any_split_into_chunks_rebuilds_the_path(points, data):
     assert tracker.points == points
     tracker.update(chunk(7, 0, [list(point) for point in points[: len(points) // 2]], total=len(points) // 2))
     assert tracker.points == points[: len(points) // 2]
+
+
+def test_a_restored_path_goes_on_with_its_id_and_starts_over_with_another():
+    tracker = PathTracker()
+    tracker.restore(1, [[0, 0], [10, 0]])
+    assert (tracker.path_id, tracker.points, tracker.position) == (1, [(0, 0), (10, 0)], (10, 0))
+    assert tracker.update(chunk(1, 2, [[20, 0]])) == [(10, 0), (20, 0)]
+    tracker.update(chunk(2, 0, [[5, 5]]))
+    assert tracker.points == [(5, 5)]
+
+
+def test_a_restored_path_that_is_not_a_list_is_empty():
+    tracker = PathTracker()
+    tracker.restore(4, {"x": 0})
+    assert (tracker.path_id, tracker.points) == (4, [])
+
+
+def test_a_restored_path_with_a_bad_point_is_refused_and_changes_nothing():
+    tracker = PathTracker()
+    tracker.update(chunk(1, 0, [[0, 0]]))
+    with pytest.raises(ValueError, match="not a number"):
+        tracker.restore(2, [[10, 0], [None, 1]])
+    assert (tracker.path_id, tracker.points) == (1, [(0, 0)])

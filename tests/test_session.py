@@ -17,11 +17,13 @@ from support.harness import DEVICE, TIMING, Harness
 from support.maps import CODES, PROFILE, build_cells, cell_center_mm, cloud_payload, rooms_message
 from support.strategies import json_scalars, json_values, path_chunks, room_lists, spot_commands
 from support.waiting import eventually, stop
+from tuya_lds_vacuum_map.config import CloudCredentials
 from tuya_lds_vacuum_map.integrations.localtuya import DP_EVENT, STATUS_EVENT
 from tuya_lds_vacuum_map.integrations.tuya_cloud import Reported, TuyaCloudError
 from tuya_lds_vacuum_map.lds.codec import decode_raw, encode_name, encode_raw
 from tuya_lds_vacuum_map.map.colors import format_color
-from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, Units
+from tuya_lds_vacuum_map.map.render import Style
+from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, Levels, Units
 from tuya_lds_vacuum_map.session import ROOM_SETTINGS_EVENT
 from tuya_lds_vacuum_map.storage import MapSource, Snapshot, Storage
 
@@ -230,6 +232,20 @@ async def test_without_a_cloud_nothing_catches_up(harness, caplog):
     await asyncio.sleep(0.05)
     await stop(task)
     assert "catch up" not in caplog.text
+    assert session.cloud_sync is None
+
+
+async def test_a_cloud_project_syncs_the_cloud_map_while_the_map_is_automatic(tmp_path):
+    harness = Harness(tmp_path, cloud=CloudCredentials("id", "secret", "eu"))
+    session = harness.session()
+    sync = session.cloud_sync
+    assert harness.app.cloud is not None
+    assert (sync.cloud, sync.device_id, sync.timing) == (harness.app.cloud, DEVICE, TIMING)
+    assert sync.on_payload == session.on_cloud_payload
+    assert (sync.enabled(), sync.moving()) == (True, False)
+    await harness.dp(DPS.state, "totaling")
+    await choose_the_local_map(harness)
+    assert (sync.enabled(), sync.moving()) == (False, True)
 
 
 def test_cloud_payload_replaces_the_map(harness):
@@ -262,10 +278,25 @@ async def test_spot_tap_reaches_localtuya(harness):
     assert scene.preview_square == ((750, -5500), (2250, -5500), (2250, -4000), (750, -4000))
     assert harness.services == []
     await harness.tap(1500, -4750, "spot")
-    assert harness.session().scene().preview_square is None
+    scene = harness.session().scene()
+    assert scene.preview_square is None
+    assert scene.spot == ((750, -5500), (2250, -5500), (2250, -4000), (750, -4000))
     [(domain, service, data)] = harness.services
     assert (domain, service, data["device_id"], data["dp"]) == ("localtuya", "set_dp", DEVICE, DPS.raw)
     assert decode_raw(data["value"])["data"]["cmds"][0]["data"]["extraAreas"][0]["mode"] == "point"
+
+
+async def test_a_tap_on_an_area_cleans_it(harness):
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    await harness.dp(DPS.raw, encode_raw(rooms_message()))
+    session.scene()
+    await harness.tap(*cell_center_mm(26, 7))
+    await eventually(lambda: harness.services)
+    [(domain, service, data)] = harness.services
+    assert (domain, service, data["device_id"], data["dp"]) == ("localtuya", "set_dp", DEVICE, DPS.raw)
+    write = decode_raw(data["value"])["data"]["cmds"][0]["data"]
+    assert write == {"mapId": 42, "value": rooms_message()["data"]["value"]}
 
 
 async def test_a_preview_that_goes_away_redraws_the_map(tmp_path):
@@ -650,6 +681,19 @@ def test_level_labels_follow_the_profile_and_language(tmp_path):
     assert english.fan_labels == {"quiet": "Quiet", "auto": "Standard", "strong": "Strong", "max": "Max", "mop": "Mop"}
     assert english.water_labels == {1: "Low", 2: "Medium", 3: "High"}
     assert Harness(tmp_path, language="pt-BR").session().fan_labels["quiet"] == "Eco"
+
+
+def test_a_level_with_no_text_shows_its_value(tmp_path):
+    levels = Levels(fan={**PROFILE.levels.fan, "turbo": "turbo"}, water={**PROFILE.levels.water, 4: "flood"})
+    profile = dataclasses.replace(PROFILE, levels=levels)
+    session = Harness(tmp_path, profiles={DEFAULT_PROFILE: profile}).session()
+    assert (session.fan_labels["turbo"], session.fan_labels["quiet"]) == ("turbo", "Quiet")
+    assert (session.water_labels[4], session.water_labels[1]) == ("4", "Low")
+
+
+def test_the_map_scale_and_font_reach_the_renderer(tmp_path):
+    session = Harness(tmp_path, map_scale=2, font_path="/fonts/map.ttf").session()
+    assert session.renderer.style == Style(scale=2, font_path="/fonts/map.ttf")
 
 
 def test_device_info(harness, monkeypatch):

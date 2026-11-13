@@ -14,7 +14,9 @@ COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-RUN uv sync --frozen --no-dev --no-cache
+ARG VERSION=0.0.0
+RUN uv version --frozen "$VERSION" \
+    && uv sync --frozen --no-dev --no-cache
 
 ENV PATH="/app/.venv/bin:$PATH" \
     DATA_DIR=/data \

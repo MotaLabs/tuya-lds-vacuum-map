@@ -33,6 +33,7 @@ def test_path_points_are_reported():
     robot = Robot(PROFILE)
     update = robot.apply({DPS.path: path_value(1, 0, [[0, 0], [100, 0]])})
     assert update.new_path == [(0, 0), (100, 0)]
+    assert update.redraw
     assert robot.path.position == (100, 0)
 
 
@@ -58,7 +59,7 @@ def test_every_room_list_reports_the_rooms_changed():
 
 def test_spot_command_is_kept_until_the_spot_clean_ends():
     robot = Robot(PROFILE, state="standby")
-    robot.apply({DPS.raw: commands.clean_spot(42, 0, 0, 1000, now_ms=1)})
+    assert robot.apply({DPS.raw: commands.clean_spot(42, 0, 0, 1000, now_ms=1)}).redraw
     assert robot.spot == ((-500, -500), (500, -500), (500, 500), (-500, 500))
     robot.apply({DPS.state: "pointing"})
     robot.apply({DPS.state: "curpointing"})
@@ -99,6 +100,16 @@ def test_room_command_does_not_touch_the_spot():
     update = robot.apply({DPS.raw: commands.clean_rooms(42, [1], now_ms=1)})
     assert robot.spot is None
     assert not update.redraw
+
+
+def test_a_robot_built_from_a_saved_room_list_keeps_it_to_save_again():
+    assert Robot(PROFILE, rooms_message()).room_message == rooms_message()
+
+
+def test_a_true_or_false_on_another_data_point_is_not_the_room_mode():
+    robot = Robot(PROFILE)
+    robot.apply({DPS.clean_time: True, 999: False})
+    assert robot.room_mode is None
 
 
 def test_room_mode_switch():

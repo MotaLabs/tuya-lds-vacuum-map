@@ -52,6 +52,22 @@ def test_main_builds_the_app_from_the_environment(env, caplog):
     assert "tuya-lds-vacuum-map 9.9.9" in caplog.text
 
 
+def test_the_log_level_comes_from_the_environment(env):
+    env.delenv("LOG_LEVEL", raising=False)
+    configured = []
+    env.setattr("logging.basicConfig", lambda **options: configured.append(options))
+
+    async def run(app) -> None:
+        pass
+
+    env.setattr(entry, "run", run)
+    entry.main()
+    env.setenv("LOG_LEVEL", "DEBUG")
+    entry.main()
+    line = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    assert configured == [{"level": "INFO", "format": line}, {"level": "DEBUG", "format": line}]
+
+
 @pytest.mark.parametrize("stop", [signal.SIGTERM, signal.SIGINT])
 def test_a_stop_signal_ends_the_app(stop):
     class Forever:

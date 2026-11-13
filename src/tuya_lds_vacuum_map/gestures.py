@@ -266,7 +266,7 @@ class TapController:
     def follow_map(self) -> None:
         previous, self._map_id = self._map_id, self.map_id()
         if previous is not None and self._map_id != previous:
-            log.info("the map changed from %s to %s, so a waiting pick is dropped", previous, self._map_id)
+            log.info("the map changed from %s to %s, so any waiting pick is dropped", previous, self._map_id)
             self.clear()
 
     def reschedule(self) -> None:

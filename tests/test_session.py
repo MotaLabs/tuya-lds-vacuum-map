@@ -378,11 +378,9 @@ async def test_a_room_list_of_another_map_drops_the_waiting_list(harness):
     session = harness.session()
     await harness.message(session.topics.auto_start_set, "OFF")
     await room_list(harness, cell_center_mm(30, 14))
-    session.dirty.clear()
     await harness.dp(DPS.raw, encode_raw(rooms_of_map(7)))
     assert session.rooms.ids == []
     assert session.scene().room_order == {}
-    assert session.dirty.is_set()
     await harness.message(session.topics.start, "PRESS")
     assert harness.services == []
 

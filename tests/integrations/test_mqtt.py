@@ -68,55 +68,92 @@ def test_discovery_configs():
         ["None", "Left"],
         (1.0, 300.0),
     )
-    assert sorted(configs) == [
-        "button/tlvm_dev_clear",
-        "button/tlvm_dev_random_room_color",
-        "button/tlvm_dev_start",
-        "camera/tlvm_dev_map",
-        "number/tlvm_dev_start_delay",
-        "select/tlvm_dev_map_source",
-        "select/tlvm_dev_room_settings",
-        "select/tlvm_dev_room_tap",
-        "switch/tlvm_dev_auto_start",
-        "text/tlvm_dev_room_color",
-    ]
-    assert configs["select/tlvm_dev_room_tap"] is None
-    start, clear = configs["button/tlvm_dev_start"], configs["button/tlvm_dev_clear"]
-    assert (start["name"], start["command_topic"], start["unique_id"]) == ("Go", TOPICS.start, "tlvm_dev_start")
-    assert (clear["name"], clear["command_topic"], clear["unique_id"]) == ("Drop", TOPICS.clear, "tlvm_dev_clear")
-    switch = configs["switch/tlvm_dev_auto_start"]
-    assert (switch["name"], switch["state_topic"], switch["command_topic"]) == (
-        "Auto start",
-        TOPICS.auto_start,
-        TOPICS.auto_start_set,
-    )
-    delay = configs["number/tlvm_dev_start_delay"]
-    assert (delay["name"], delay["state_topic"], delay["command_topic"]) == (
-        "Delay",
-        TOPICS.start_delay,
-        TOPICS.start_delay_set,
-    )
-    assert (delay["min"], delay["max"], delay["step"], delay["unit_of_measurement"]) == (1.0, 300.0, 1, "s")
+    common = {"availability_topic": AVAILABILITY, "device": DEVICE}
     color = configs["text/tlvm_dev_room_color"]
-    assert (color["state_topic"], color["command_topic"]) == (TOPICS.room_color, TOPICS.room_color_set)
     assert re.match(color["pattern"], "#a0B1c2")
     assert re.match(color["pattern"], "")
     assert not re.match(color["pattern"], "#a0b1c")
-    assert configs["button/tlvm_dev_random_room_color"]["command_topic"] == TOPICS.room_color_random
-    camera = configs["camera/tlvm_dev_map"]
-    assert (camera["topic"], camera["json_attributes_topic"], camera["unique_id"]) == (
-        TOPICS.map,
-        TOPICS.map_attributes,
-        "tlvm_dev_map",
-    )
-    room = configs["select/tlvm_dev_room_settings"]
-    assert (room["command_topic"], room["options"]) == (TOPICS.room_settings_set, ["None", "Left"])
-    assert configs["select/tlvm_dev_map_source"]["options"] == ["Auto", "Local"]
-    assert all(
-        config["availability_topic"] == AVAILABILITY and config["device"] == DEVICE
-        for config in configs.values()
-        if config is not None
-    )
+    assert configs == {
+        "select/tlvm_dev_room_tap": None,
+        "camera/tlvm_dev_map": {
+            **common,
+            "name": "Map",
+            "unique_id": "tlvm_dev_map",
+            "topic": "maps/dev/map",
+            "json_attributes_topic": "maps/dev/map/attributes",
+        },
+        "select/tlvm_dev_map_source": {
+            **common,
+            "name": "Source",
+            "unique_id": "tlvm_dev_map_source",
+            "state_topic": "maps/dev/map_source",
+            "command_topic": "maps/dev/map_source/set",
+            "options": ["Auto", "Local"],
+            "entity_category": "config",
+        },
+        "select/tlvm_dev_room_settings": {
+            **common,
+            "name": "Room",
+            "unique_id": "tlvm_dev_room_settings",
+            "state_topic": "maps/dev/room_settings",
+            "command_topic": "maps/dev/room_settings/set",
+            "options": ["None", "Left"],
+        },
+        "text/tlvm_dev_room_color": {
+            **common,
+            "name": "Color",
+            "unique_id": "tlvm_dev_room_color",
+            "state_topic": "maps/dev/room_color",
+            "command_topic": "maps/dev/room_color/set",
+            "pattern": color["pattern"],
+            "max": 7,
+            "icon": "mdi:palette",
+        },
+        "button/tlvm_dev_random_room_color": {
+            **common,
+            "name": "Dice",
+            "unique_id": "tlvm_dev_random_room_color",
+            "command_topic": "maps/dev/room_color/random",
+            "icon": "mdi:dice-multiple",
+        },
+        "switch/tlvm_dev_auto_start": {
+            **common,
+            "name": "Auto start",
+            "unique_id": "tlvm_dev_auto_start",
+            "state_topic": "maps/dev/auto_start",
+            "command_topic": "maps/dev/auto_start/set",
+            "entity_category": "config",
+            "icon": "mdi:timer-play-outline",
+        },
+        "number/tlvm_dev_start_delay": {
+            **common,
+            "name": "Delay",
+            "unique_id": "tlvm_dev_start_delay",
+            "state_topic": "maps/dev/start_delay",
+            "command_topic": "maps/dev/start_delay/set",
+            "min": 1.0,
+            "max": 300.0,
+            "step": 1,
+            "mode": "box",
+            "unit_of_measurement": "s",
+            "device_class": "duration",
+            "entity_category": "config",
+        },
+        "button/tlvm_dev_start": {
+            **common,
+            "name": "Go",
+            "unique_id": "tlvm_dev_start",
+            "command_topic": "maps/dev/start",
+            "icon": "mdi:play",
+        },
+        "button/tlvm_dev_clear": {
+            **common,
+            "name": "Drop",
+            "unique_id": "tlvm_dev_clear",
+            "command_topic": "maps/dev/clear",
+            "icon": "mdi:selection-remove",
+        },
+    }
 
 
 def test_statistic_configs():

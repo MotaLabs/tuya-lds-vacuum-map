@@ -7,7 +7,7 @@ from websockets.asyncio.server import serve
 
 from support.closing_server import ClosingServer
 from support.fakes import ClosedSocket
-from support.waiting import eventually, stop
+from support.waiting import RecordedSleeps, eventually, stop
 from tuya_lds_vacuum_map.integrations import homeassistant
 from tuya_lds_vacuum_map.integrations.homeassistant import HomeAssistant, HomeAssistantError
 
@@ -87,18 +87,6 @@ async def test_a_call_while_the_connection_closes_is_a_home_assistant_error(clos
         await stop(task)
     assert reply.done()
     assert not reply._log_traceback
-
-
-class RecordedSleeps:
-    def __init__(self) -> None:
-        self.delays: list[float] = []
-
-    def __getattr__(self, name: str):
-        return getattr(asyncio, name)
-
-    async def sleep(self, delay: float) -> None:
-        self.delays.append(delay)
-        await asyncio.sleep(0)
 
 
 async def test_a_refused_subscription_reconnects_ever_more_slowly(monkeypatch, caplog):

@@ -18,3 +18,15 @@ async def stop(task: asyncio.Task) -> None:
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await task
+
+
+class RecordedSleeps:
+    def __init__(self) -> None:
+        self.delays: list[float] = []
+
+    def __getattr__(self, name: str):
+        return getattr(asyncio, name)
+
+    async def sleep(self, delay: float) -> None:
+        self.delays.append(delay)
+        await asyncio.sleep(0)

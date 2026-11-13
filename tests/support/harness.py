@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 from support.fakes import FakeClient
 from support.maps import PROFILE
@@ -21,6 +22,7 @@ class Harness:
         language: str = "en",
         profiles: dict[str, Profile] | None = None,
         timing: Timing = TIMING,
+        **overrides: Any,
     ) -> None:
         settings = Settings(
             ha_url="http://ha.local:8123",
@@ -30,6 +32,7 @@ class Harness:
             language=language,
             data_dir=str(data_dir),
             timing=timing,
+            **overrides,
         )
         self.app = App(settings, profiles or {DEFAULT_PROFILE: PROFILE}, load_texts(language))
         self.client = FakeClient()

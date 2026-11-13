@@ -2,12 +2,14 @@ import asyncio
 import base64
 import colorsys
 import dataclasses
+import hashlib
 import json
 import logging
 import random
 import tempfile
 import time
 
+import aiomqtt
 import pytest
 from hypothesis import example, given
 from hypothesis import strategies as st
@@ -17,11 +19,13 @@ from support.harness import DEVICE, TIMING, Harness
 from support.maps import CODES, PROFILE, build_cells, cell_center_mm, cloud_payload, rooms_message
 from support.strategies import json_scalars, json_values, path_chunks, room_lists, spot_commands
 from support.waiting import eventually, stop
+from tuya_lds_vacuum_map.config import CloudCredentials
 from tuya_lds_vacuum_map.integrations.localtuya import DP_EVENT, STATUS_EVENT
 from tuya_lds_vacuum_map.integrations.tuya_cloud import Reported, TuyaCloudError
 from tuya_lds_vacuum_map.lds.codec import decode_raw, encode_name, encode_raw
 from tuya_lds_vacuum_map.map.colors import format_color
-from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, Units
+from tuya_lds_vacuum_map.map.render import Style
+from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, Levels, Units
 from tuya_lds_vacuum_map.session import ROOM_SETTINGS_EVENT
 from tuya_lds_vacuum_map.storage import MapSource, Snapshot, Storage
 
@@ -41,6 +45,12 @@ async def test_room_list_republishes_the_room_options(harness):
     assert config["options"] == ["None", "Left", "Right"]
     assert harness.session().dirty.is_set()
     assert harness.session().unsaved
+
+
+async def test_the_map_source_select_offers_both_sources(harness):
+    await harness.session().publish_discovery()
+    config = json.loads(harness.client.last(f"homeassistant/select/tlvm_{DEVICE}_map_source/config"))
+    assert config["options"] == ["Automatic", "Local only"]
 
 
 async def test_statistics_reach_their_sensors(harness):
@@ -230,6 +240,20 @@ async def test_without_a_cloud_nothing_catches_up(harness, caplog):
     await asyncio.sleep(0.05)
     await stop(task)
     assert "catch up" not in caplog.text
+    assert session.cloud_sync is None
+
+
+async def test_a_cloud_project_syncs_the_cloud_map_while_the_map_is_automatic(tmp_path):
+    harness = Harness(tmp_path, cloud=CloudCredentials("id", "secret", "eu"))
+    session = harness.session()
+    sync = session.cloud_sync
+    assert harness.app.cloud is not None
+    assert (sync.cloud, sync.device_id, sync.timing) == (harness.app.cloud, DEVICE, TIMING)
+    assert sync.on_payload == session.on_cloud_payload
+    assert (sync.enabled(), sync.moving()) == (True, False)
+    await harness.dp(DPS.state, "totaling")
+    await choose_the_local_map(harness)
+    assert (sync.enabled(), sync.moving()) == (False, True)
 
 
 def test_cloud_payload_replaces_the_map(harness):
@@ -262,10 +286,25 @@ async def test_spot_tap_reaches_localtuya(harness):
     assert scene.preview_square == ((750, -5500), (2250, -5500), (2250, -4000), (750, -4000))
     assert harness.services == []
     await harness.tap(1500, -4750, "spot")
-    assert harness.session().scene().preview_square is None
+    scene = harness.session().scene()
+    assert scene.preview_square is None
+    assert scene.spot == ((750, -5500), (2250, -5500), (2250, -4000), (750, -4000))
     [(domain, service, data)] = harness.services
     assert (domain, service, data["device_id"], data["dp"]) == ("localtuya", "set_dp", DEVICE, DPS.raw)
     assert decode_raw(data["value"])["data"]["cmds"][0]["data"]["extraAreas"][0]["mode"] == "point"
+
+
+async def test_a_tap_on_an_area_cleans_it(harness):
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    await harness.dp(DPS.raw, encode_raw(rooms_message()))
+    session.scene()
+    await harness.tap(*cell_center_mm(26, 7))
+    await eventually(lambda: harness.services)
+    [(domain, service, data)] = harness.services
+    assert (domain, service, data["device_id"], data["dp"]) == ("localtuya", "set_dp", DEVICE, DPS.raw)
+    write = decode_raw(data["value"])["data"]["cmds"][0]["data"]
+    assert write == {"mapId": 42, "value": rooms_message()["data"]["value"]}
 
 
 async def test_a_preview_that_goes_away_redraws_the_map(tmp_path):
@@ -501,15 +540,64 @@ async def test_scene_needs_a_map(harness):
     assert scene.dock == (0, 0)
 
 
+async def test_the_scene_carries_the_robot_the_areas_and_the_level_labels(harness):
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    await harness.dp(DPS.raw, encode_raw(rooms_message()))
+    await harness.dp(DPS.path, path_chunk(0, [[0, 0], [100, 200]]))
+    scene = session.scene()
+    assert scene.robot == (100, 200)
+    assert [(area.id, area.name) for area in scene.areas] == [(101, "Cats"), (4, "")]
+    assert (scene.fan_labels["quiet"], scene.water_labels[3]) == ("Quiet", "High")
+
+
+async def test_the_covered_floor_takes_the_nearest_room(harness):
+    await harness.dp(DPS.raw, encode_raw(rooms_message()))
+    left, right = cell_center_mm(10, 14), cell_center_mm(30, 14)
+    await harness.dp(DPS.path, path_chunk(0, [list(left), list(right)]))
+    cells = set(harness.session().scene().grid.cells)
+    assert {1, 2} <= cells
+    assert CODES.floor not in cells
+
+
 async def test_render_loop_publishes_the_map(harness):
     harness.session().on_cloud_payload(cloud_payload())
     task = asyncio.create_task(harness.session().render_loop())
     await eventually(lambda: harness.session().topics.map_attributes in harness.client.topics())
     await stop(task)
-    assert harness.client.last(harness.session().topics.map).startswith(b"\x89PNG")
+    image = harness.client.last(harness.session().topics.map)
+    assert image.startswith(b"\x89PNG")
     attributes = json.loads(harness.client.last(harness.session().topics.map_attributes))
     assert len(attributes["calibration_points"]) == 3
     assert attributes["map_source"] == "auto"
+    assert attributes["image_digest"] == hashlib.sha256(image).hexdigest()[:16]
+
+
+async def test_nothing_is_drawn_while_mqtt_is_down(harness):
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    harness.app.mqtt._client = None
+    drawn = []
+    session.renderer.render = drawn.append
+    session.dirty.clear()
+    await session.redraw()
+    assert drawn == []
+    assert not session.dirty.is_set()
+
+
+async def test_a_map_that_could_not_be_published_is_drawn_again(harness):
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    session.dirty.clear()
+    await session.redraw()
+    assert not session.dirty.is_set()
+
+    async def refuse(topic, payload, retain=False):
+        raise aiomqtt.MqttError("gone")
+
+    harness.client.publish = refuse
+    await session.redraw()
+    assert session.dirty.is_set()
 
 
 async def test_running_a_session_draws_saves_and_syncs_the_cloud_map(harness, tmp_path):
@@ -652,10 +740,28 @@ def test_level_labels_follow_the_profile_and_language(tmp_path):
     assert Harness(tmp_path, language="pt-BR").session().fan_labels["quiet"] == "Eco"
 
 
+def test_a_level_with_no_text_shows_its_value(tmp_path):
+    levels = Levels(fan={**PROFILE.levels.fan, "turbo": "turbo"}, water={**PROFILE.levels.water, 4: "flood"})
+    profile = dataclasses.replace(PROFILE, levels=levels)
+    session = Harness(tmp_path, profiles={DEFAULT_PROFILE: profile}).session()
+    assert (session.fan_labels["turbo"], session.fan_labels["quiet"]) == ("turbo", "Quiet")
+    assert (session.water_labels[4], session.water_labels[1]) == ("4", "Low")
+
+
+def test_the_map_scale_and_font_reach_the_renderer(tmp_path):
+    session = Harness(tmp_path, map_scale=2, font_path="/fonts/map.ttf").session()
+    assert session.renderer.style == Style(scale=2, font_path="/fonts/map.ttf")
+
+
 def test_device_info(harness, monkeypatch):
     monkeypatch.setattr("tuya_lds_vacuum_map.session.__version__", "9.9.9")
-    info = harness.session().device_info()
-    assert (info["model"], info["name"], info["sw_version"]) == ("lds-robot", "Vacuum map 123456", "9.9.9")
+    assert harness.session().device_info() == {
+        "identifiers": [f"tuya_lds_vacuum_map_{DEVICE}"],
+        "name": "Vacuum map 123456",
+        "manufacturer": "tuya-lds-vacuum-map",
+        "model": "lds-robot",
+        "sw_version": "9.9.9",
+    }
 
 
 async def select_right(harness: Harness) -> None:
@@ -720,7 +826,7 @@ async def test_bad_colors_and_no_selection_change_nothing(harness, caplog):
     await select_right(harness)
     await harness.message(session.topics.room_color_set, "blue")
     assert session.room_colors == before
-    assert "no room selected" in caplog.text
+    assert f"{DEVICE}: could not handle {session.topics.room_color_random}: no room selected" in caplog.messages
     assert "#rrggbb" in caplog.text
 
 

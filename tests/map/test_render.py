@@ -230,3 +230,21 @@ def test_a_map_with_more_cells_than_pixels_is_drawn_one_pixel_per_cell(monkeypat
     image, points = Renderer(CODES, STYLE).render(Scene(GridMap.from_cloud(payload)))
     assert Image.open(io.BytesIO(image)).size == (WIDTH, HEIGHT)
     assert points == calibration(GridMap.from_cloud(payload), 1)
+
+
+def test_a_spot_or_preview_of_three_vertices_is_drawn(payload):
+    grid = GridMap.from_cloud(payload)
+    triangle = tuple(tuple(vertex) for vertex in commands.spot_square(*cell_center_mm(30, 14), 500))[:3]
+    plain = render(Scene(grid, rooms=UNNAMED, room_colors=COLORS))
+    spot = render(Scene(grid, rooms=UNNAMED, room_colors=COLORS, spot=triangle))
+    preview = render(Scene(grid, rooms=UNNAMED, room_colors=COLORS, preview_square=triangle))
+    assert spot.tobytes() != plain.tobytes()
+    assert preview.tobytes() != plain.tobytes()
+
+
+def test_an_area_of_two_vertices_draws_its_dashed_line(payload):
+    grid = GridMap.from_cloud(payload)
+    line = Area(1, "area", "normal", "", (cell_center_mm(5, 10), cell_center_mm(15, 10)))
+    image = render(Scene(grid, rooms=UNNAMED, room_colors=COLORS, areas=(line,)))
+    _, y = pixel_of_cell(10, 10)
+    assert any(image.getpixel((x, y)) == (40, 40, 40) for x in range(5 * SCALE, 16 * SCALE))

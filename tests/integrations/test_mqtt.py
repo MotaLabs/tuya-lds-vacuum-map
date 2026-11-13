@@ -5,7 +5,8 @@ from types import SimpleNamespace
 
 import aiomqtt
 
-from support.waiting import eventually, stop
+from support.waiting import RecordedSleeps, eventually, stop
+from tuya_lds_vacuum_map.integrations import mqtt
 from tuya_lds_vacuum_map.integrations.mqtt import Broker, MqttBridge, Topics, discovery_configs, statistic_configs
 
 TOPICS = Topics("maps/dev")
@@ -280,14 +281,16 @@ async def test_run_subscribes_announces_and_delivers(monkeypatch):
     await eventually(lambda: connections and connections[0].published)
     [connection] = connections
     will = connection.options["will"]
-    assert (connection.host, connection.options["port"], connection.options["username"]) == ("broker", 1884, "user")
+    assert (connection.host, connection.options["port"]) == ("broker", 1884)
+    assert (connection.options["username"], connection.options["password"]) == ("user", "secret")
     assert (will.topic, will.payload, will.retain) == (AVAILABILITY, "offline", True)
     assert connection.subscribed == ["maps/dev/tap", "maps/dev/room_color/set"]
     assert seen_connected == [True]
     assert connection.published == [(AVAILABILITY, "online", True)]
     connection.inbox.put_nowait(SimpleNamespace(topic=SimpleNamespace(value="maps/dev/tap"), payload=b'{"x": 1}'))
-    await eventually(lambda: received)
-    assert received == [("maps/dev/tap", '{"x": 1}')]
+    connection.inbox.put_nowait(SimpleNamespace(topic=SimpleNamespace(value="maps/dev/start"), payload="go"))
+    await eventually(lambda: len(received) == 2)
+    assert received == [("maps/dev/tap", '{"x": 1}'), ("maps/dev/start", "go")]
     await stop(task)
     assert not target.connected
 
@@ -298,9 +301,6 @@ async def test_a_message_that_is_not_utf8_is_skipped(monkeypatch, caplog):
     def connect(host: str, **options) -> FakeConnection:
         connections.append(FakeConnection(host, options))
         return connections[-1]
-
-    async def nothing() -> None:
-        pass
 
     async def on_message(topic: str, payload: str) -> None:
         received.append(payload)
@@ -316,3 +316,46 @@ async def test_a_message_that_is_not_utf8_is_skipped(monkeypatch, caplog):
     await stop(task)
     assert received == ["after"]
     assert "maps/dev/tap that is not UTF-8" in caplog.text
+
+
+class RefusedConnection(FakeConnection):
+    async def __aenter__(self) -> "FakeConnection":
+        raise aiomqtt.MqttError("refused")
+
+
+class LostConnection(FakeConnection):
+    @property
+    async def messages(self):
+        raise aiomqtt.MqttError("lost")
+        yield
+
+
+async def nothing() -> None:
+    pass
+
+
+async def ignore(topic: str, payload: str) -> None:
+    pass
+
+
+async def test_a_refused_connection_retries_ever_more_slowly(monkeypatch, caplog):
+    sleeps = RecordedSleeps()
+    monkeypatch.setattr(mqtt, "asyncio", sleeps)
+    monkeypatch.setattr(aiomqtt, "Client", lambda host, **options: RefusedConnection(host, options))
+    target = MqttBridge(Broker("broker"), AVAILABILITY, "homeassistant")
+    task = asyncio.create_task(target.run([], nothing, ignore))
+    await eventually(lambda: len(sleeps.delays) >= 8)
+    await stop(task)
+    assert sleeps.delays[:8] == [1, 2, 4, 8, 16, 32, 60, 60]
+    assert "MQTT connection lost: refused" in caplog.text
+
+
+async def test_a_connection_that_was_up_starts_the_wait_over(monkeypatch):
+    sleeps = RecordedSleeps()
+    monkeypatch.setattr(mqtt, "asyncio", sleeps)
+    monkeypatch.setattr(aiomqtt, "Client", lambda host, **options: LostConnection(host, options))
+    target = MqttBridge(Broker("broker"), AVAILABILITY, "homeassistant")
+    task = asyncio.create_task(target.run([], nothing, ignore))
+    await eventually(lambda: len(sleeps.delays) >= 3)
+    await stop(task)
+    assert sleeps.delays[:3] == [1, 1, 1]

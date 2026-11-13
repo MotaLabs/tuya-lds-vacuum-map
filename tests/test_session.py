@@ -2,12 +2,14 @@ import asyncio
 import base64
 import colorsys
 import dataclasses
+import hashlib
 import json
 import logging
 import random
 import tempfile
 import time
 
+import aiomqtt
 import pytest
 from hypothesis import example, given
 from hypothesis import strategies as st
@@ -557,10 +559,39 @@ async def test_render_loop_publishes_the_map(harness):
     task = asyncio.create_task(harness.session().render_loop())
     await eventually(lambda: harness.session().topics.map_attributes in harness.client.topics())
     await stop(task)
-    assert harness.client.last(harness.session().topics.map).startswith(b"\x89PNG")
+    image = harness.client.last(harness.session().topics.map)
+    assert image.startswith(b"\x89PNG")
     attributes = json.loads(harness.client.last(harness.session().topics.map_attributes))
     assert len(attributes["calibration_points"]) == 3
     assert attributes["map_source"] == "auto"
+    assert attributes["image_digest"] == hashlib.sha256(image).hexdigest()[:16]
+
+
+async def test_nothing_is_drawn_while_mqtt_is_down(harness):
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    harness.app.mqtt._client = None
+    drawn = []
+    session.renderer.render = drawn.append
+    session.dirty.clear()
+    await session.redraw()
+    assert drawn == []
+    assert not session.dirty.is_set()
+
+
+async def test_a_map_that_could_not_be_published_is_drawn_again(harness):
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    session.dirty.clear()
+    await session.redraw()
+    assert not session.dirty.is_set()
+
+    async def refuse(topic, payload, retain=False):
+        raise aiomqtt.MqttError("gone")
+
+    harness.client.publish = refuse
+    await session.redraw()
+    assert session.dirty.is_set()
 
 
 async def test_running_a_session_draws_saves_and_syncs_the_cloud_map(harness, tmp_path):

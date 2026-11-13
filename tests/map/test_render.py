@@ -286,3 +286,18 @@ def test_labels_are_drawn_with_the_configured_font(monkeypatch, payload):
     )
     assert paths
     assert set(paths) == {"/fonts/labels.ttf"}
+
+
+def test_a_fan_setting_shows_a_fan_and_a_water_setting_a_drop(payload):
+    grid = GridMap.from_cloud(payload)
+
+    def colors(room: Room) -> set:
+        image = render(
+            Scene(grid, rooms=(room,), show_settings=True, fan_labels={"quiet": "Quiet"}, water_labels={1: "Low"})
+        )
+        return {STYLE.fan[:3], STYLE.water[:3]} & set(image.get_flattened_data())
+
+    pos = cell_center_mm(10, 14)
+    assert colors(Room(1, "Left", pos=pos, fan="quiet")) == {STYLE.fan[:3]}
+    assert colors(Room(1, "Left", pos=pos, water=1)) == {STYLE.water[:3]}
+    assert colors(Room(1, "Left", pos=pos, fan="quiet", water=1)) == {STYLE.fan[:3], STYLE.water[:3]}

@@ -202,7 +202,9 @@ async def test_turning_the_automatic_start_on_starts_the_preview(setup):
 
 async def test_rescheduling_without_a_preview_does_nothing(setup):
     setup.delay = DELAY
+    tasks = asyncio.all_tasks()
     setup.spots.reschedule()
+    assert asyncio.all_tasks() == tasks
     await asyncio.sleep(DELAY * 2)
     assert setup.sender.sent == []
     assert setup.changes == 0
@@ -267,6 +269,44 @@ async def test_a_spot_that_fails_to_start_is_logged(caplog):
     assert setup.spots.preview is None
     assert setup.robot.spot is None
     assert setup.changes == 1
+
+
+def test_a_second_tap_right_at_the_end_of_the_window_is_a_double_tap():
+    taps = DoubleTap(0.5)
+    taps.tap(1.0, 1)
+    assert taps.tap(1.5, 1)
+
+
+async def test_a_room_list_emptied_by_hand_sends_nothing(setup):
+    setup.rooms.toggle(42, 1)
+    setup.rooms.toggle(42, 1)
+    await setup.rooms.start()
+    assert setup.sender.sent == []
+
+
+async def test_a_room_tap_with_no_room_list_does_nothing():
+    setup = Setup(None, cloud_payload())
+    await setup.taps.tap(TapMode.ROOM, *LEFT)
+    await asyncio.sleep(WINDOW * 3)
+    assert (setup.sender.sent, setup.selected, setup.rooms.ids) == ([], [], [])
+
+
+async def test_a_room_tap_drops_an_area_clean_that_waits(setup):
+    await setup.taps.tap(TapMode.ROOM, *CATS)
+    await setup.taps.tap(TapMode.ROOM, *LEFT)
+    await eventually(lambda: setup.rooms.ids)
+    assert (setup.sender.sent, setup.rooms.ids) == ([], [1])
+
+
+async def test_a_tap_that_replaces_a_waiting_one_waits_its_own_window(setup):
+    window = 0.4
+    setup.taps = TapController(setup.robot, setup.map, setup.sender, setup.select, window, setup.spots, setup.rooms)
+    await setup.taps.tap(TapMode.ROOM, *LEFT)
+    await asyncio.sleep(window * 0.6)
+    await setup.taps.tap(TapMode.ROOM, *RIGHT)
+    await asyncio.sleep(window * 0.6)
+    assert setup.rooms.ids == [1]
+    await eventually(lambda: setup.rooms.ids == [1, 2])
 
 
 async def test_tap_outside_rooms_does_nothing(setup):

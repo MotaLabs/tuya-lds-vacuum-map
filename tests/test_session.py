@@ -616,6 +616,21 @@ async def test_state_survives_a_restart(tmp_path):
     assert second.scene().path == [(0, 0)]
 
 
+async def test_a_restart_during_a_cleaning_paints_no_band_across_the_points_it_missed(tmp_path):
+    first = Harness(tmp_path)
+    await first.dp(
+        DPS.path, encode_raw({"infoType": 21011, "data": {"pathID": 1, "startPos": 0, "posArray": [[0, 0]]}})
+    )
+    first.session().save()
+    second = Harness(tmp_path)
+    far = {"infoType": 21011, "data": {"pathID": 1, "startPos": 40, "posArray": [[3000, 0], [3050, 0]]}}
+    await second.dp(DPS.path, encode_raw(far))
+    cells = second.session().map.coverage.cells
+    assert (60, 0) in cells
+    assert (30, 0) not in cells
+    assert second.session().robot.path.points == [(3000, 0), (3050, 0)]
+
+
 async def test_a_saved_path_that_cannot_be_read_is_dropped(tmp_path, caplog):
     Storage(tmp_path / DEVICE / "state.json").save(Snapshot(robot_state="idle", path_id=3, path=[[None, 0]]))
     session = Harness(tmp_path).session()

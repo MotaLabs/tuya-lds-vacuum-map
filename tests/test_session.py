@@ -3,6 +3,7 @@ import base64
 import colorsys
 import dataclasses
 import json
+import logging
 import random
 import tempfile
 import time
@@ -13,12 +14,12 @@ from hypothesis import strategies as st
 
 from support.fakes import FakeCloud, FakeCloudSync
 from support.harness import DEVICE, TIMING, Harness
-from support.maps import PROFILE, cell_center_mm, cloud_payload, rooms_message
+from support.maps import CODES, PROFILE, build_cells, cell_center_mm, cloud_payload, rooms_message
 from support.strategies import json_scalars, json_values, path_chunks, room_lists, spot_commands
 from support.waiting import eventually, stop
 from tuya_lds_vacuum_map.integrations.localtuya import DP_EVENT, STATUS_EVENT
 from tuya_lds_vacuum_map.integrations.tuya_cloud import Reported, TuyaCloudError
-from tuya_lds_vacuum_map.lds.codec import decode_raw, encode_raw
+from tuya_lds_vacuum_map.lds.codec import decode_raw, encode_name, encode_raw
 from tuya_lds_vacuum_map.map.colors import format_color
 from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, Units
 from tuya_lds_vacuum_map.session import ROOM_SETTINGS_EVENT
@@ -366,6 +367,81 @@ async def test_the_clear_button_drops_the_list(harness):
     assert harness.session().scene().room_order == {}
     await harness.message(harness.session().topics.start, "PRESS")
     assert harness.services == []
+
+
+def rooms_of_map(map_id: int) -> dict:
+    message = rooms_message()
+    message["data"]["mapId"] = map_id
+    return message
+
+
+async def test_a_room_list_of_another_map_drops_the_waiting_list(harness, caplog):
+    caplog.set_level(logging.INFO, logger="tuya_lds_vacuum_map.gestures")
+    session = harness.session()
+    await harness.message(session.topics.auto_start_set, "OFF")
+    await room_list(harness, cell_center_mm(30, 14))
+    await harness.dp(DPS.raw, encode_raw(rooms_of_map(7)))
+    assert session.rooms.ids == []
+    assert session.scene().room_order == {}
+    assert "the map changed from 42 to 7, so any waiting pick is dropped" in caplog.text
+    await harness.message(session.topics.start, "PRESS")
+    assert harness.services == []
+
+
+async def test_a_cloud_map_of_another_map_drops_the_waiting_spot(harness):
+    session = harness.session()
+    await harness.message(session.topics.auto_start_set, "OFF")
+    session.on_cloud_payload(cloud_payload())
+    await harness.tap(1500, -4750, "spot")
+    assert session.spots.preview is not None
+    session.on_cloud_payload(cloud_payload(map_id=7))
+    assert session.spots.preview is None
+    assert session.scene().preview_square is None
+    await harness.message(session.topics.start, "PRESS")
+    assert harness.services == []
+
+
+async def test_the_same_map_again_keeps_the_waiting_pick(harness):
+    session = harness.session()
+    await harness.message(session.topics.auto_start_set, "OFF")
+    await room_list(harness, cell_center_mm(30, 14))
+    renamed = rooms_message()
+    renamed["data"]["autoAreaValue"][0]["name"] = encode_name("Hall")
+    await harness.dp(DPS.raw, encode_raw(renamed))
+    cells = build_cells()
+    cells[0] = CODES.wall
+    session.on_cloud_payload(cloud_payload(cells, map_id=42))
+    assert session.map.cloud.cells[0] == CODES.wall
+    assert session.rooms.ids == [2]
+    await harness.message(session.topics.start, "PRESS")
+    assert segments(harness) == [[2]]
+
+
+async def test_a_tap_still_waiting_for_a_double_tap_is_dropped_with_the_old_map(harness):
+    session = harness.session()
+    await harness.message(session.topics.auto_start_set, "OFF")
+    session.on_cloud_payload(cloud_payload())
+    await harness.dp(DPS.raw, encode_raw(rooms_message()))
+    session.scene()
+    await harness.tap(*cell_center_mm(30, 14))
+    await harness.dp(DPS.raw, encode_raw(rooms_of_map(7)))
+    await asyncio.sleep(TIMING.double_tap * 3)
+    assert session.rooms.ids == []
+
+
+async def test_a_new_map_after_a_restart_drops_a_list_picked_on_the_saved_one(tmp_path):
+    first = Harness(tmp_path)
+    first.session().on_cloud_payload(cloud_payload())
+    await first.dp(DPS.raw, encode_raw(rooms_message()))
+    await first.message(first.session().topics.auto_start_set, "OFF")
+    first.session().save()
+    second = Harness(tmp_path)
+    session = second.session()
+    session.scene()
+    await second.tap(*cell_center_mm(30, 14))
+    await eventually(lambda: session.rooms.ids == [2])
+    await second.dp(DPS.raw, encode_raw(rooms_of_map(7)))
+    assert session.rooms.ids == []
 
 
 async def test_turning_the_automatic_start_on_starts_a_waiting_list(harness):

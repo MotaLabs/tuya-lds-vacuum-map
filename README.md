@@ -301,7 +301,9 @@ automatic start on, the robot also leaves by itself once no tap came for the sta
 after the round trip from the card to the service and back, about 1 to 3 s.
 
 One pick waits at a time: a spot tap drops the list of rooms, and a room added to the list drops the spot
-preview.
+preview. A pick belongs to the map whose id its command carries: the one of the robot's room list, or of the
+cloud map while the robot has sent no room list. When that id changes, for example after the robot maps again, a
+waiting pick is dropped instead of being drawn on the new map and sent with the old id.
 
 To show a room's settings below the map after a double tap, use a `conditional` card on
 `select.<device>_room_settings` for each room. The room color entities act on the same picked room, so they

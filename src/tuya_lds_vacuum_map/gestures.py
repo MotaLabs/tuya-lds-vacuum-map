@@ -219,6 +219,7 @@ class TapController:
         self._pending: asyncio.Task | None = None
         self._then: Callable[[], Awaitable[None]] | None = None
         self._picking = False
+        self._map_id = self.map_id()
 
     def map_id(self) -> int | None:
         if self.robot.rooms and self.robot.rooms.map_id is not None:
@@ -261,6 +262,12 @@ class TapController:
         self._drop_waiting()
         self.spots.clear()
         self.rooms.clear()
+
+    def follow_map(self) -> None:
+        previous, self._map_id = self._map_id, self.map_id()
+        if previous is not None and self._map_id != previous:
+            log.info("the map changed from %s to %s, so any waiting pick is dropped", previous, self._map_id)
+            self.clear()
 
     def reschedule(self) -> None:
         if self._then is None:

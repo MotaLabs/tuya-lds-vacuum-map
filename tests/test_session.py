@@ -5,17 +5,19 @@ import dataclasses
 import json
 import random
 import tempfile
+import time
 
 import pytest
 from hypothesis import example, given
 from hypothesis import strategies as st
 
-from support.fakes import FakeCloudSync
+from support.fakes import FakeCloud, FakeCloudSync
 from support.harness import DEVICE, TIMING, Harness
 from support.maps import PROFILE, cell_center_mm, cloud_payload, rooms_message
 from support.strategies import json_scalars, json_values, path_chunks, room_lists, spot_commands
 from support.waiting import eventually, stop
 from tuya_lds_vacuum_map.integrations.localtuya import DP_EVENT, STATUS_EVENT
+from tuya_lds_vacuum_map.integrations.tuya_cloud import Reported, TuyaCloudError
 from tuya_lds_vacuum_map.lds.codec import decode_raw, encode_raw
 from tuya_lds_vacuum_map.map.colors import format_color
 from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, Units
@@ -110,6 +112,123 @@ async def test_cleaning_wakes_the_cloud_sync(harness):
     await harness.dp(DPS.state, "totaling")
     await harness.dp(DPS.state, "chargring")
     assert sync.calls == ["wake", "after_cleaning"]
+
+
+async def test_catching_up_applies_the_robot_status_from_the_cloud(harness):
+    session = harness.session()
+    path = encode_raw({"infoType": 21011, "data": {"pathID": 1, "startPos": 0, "posArray": [[0, 0], [300, 0]]}})
+    points = {
+        DPS.state: Reported("totaling", 5),
+        DPS.room_mode: Reported(True, 5),
+        DPS.total_count: Reported(963, 5),
+        DPS.raw: Reported(encode_raw(rooms_message()), 5),
+        DPS.path: Reported(path, 5),
+        999: Reported("x", 5),
+    }
+    session.cloud = cloud = FakeCloud(points)
+    await session.catch_up_from_cloud()
+    assert cloud.calls == [DEVICE]
+    assert (session.robot.state, session.robot.room_mode, session.robot.rooms) == ("totaling", True, None)
+    assert session.robot.path.position is None
+    assert harness.client.last(session.topics.statistic("total_count")) == "963"
+    assert session.reported_ms == {DPS.state: 5, DPS.room_mode: 5, DPS.total_count: 5}
+
+
+async def test_a_cloud_value_replaces_only_an_older_local_one_or_none(harness):
+    session = harness.session()
+    await harness.dp(DPS.state, "totaling")
+    await harness.dp(DPS.total_count, 964)
+    local_ms = session.reported_ms[DPS.state]
+    later = local_ms + 60_000
+    session.cloud = FakeCloud(
+        {
+            DPS.state: Reported("chargring", local_ms - 1),
+            DPS.total_count: Reported(965, later),
+            DPS.room_mode: Reported(True, 0),
+        }
+    )
+    await session.catch_up_from_cloud()
+    assert session.robot.state == "totaling"
+    assert session.robot.statistics["total_count"] == 965
+    assert session.robot.room_mode is True
+    assert session.reported_ms[DPS.total_count] == later
+    session.cloud.points[DPS.total_count] = Reported(966, later)
+    await session.catch_up_from_cloud()
+    assert session.robot.statistics["total_count"] == 965
+
+
+async def test_a_local_value_that_arrives_while_the_cloud_answers_is_kept(harness):
+    session = harness.session()
+    reported = int(time.time() * 1000) - 1000
+    session.cloud = cloud = FakeCloud(
+        {DPS.state: Reported("chargring", reported), DPS.total_count: Reported(963, reported)}
+    )
+    cloud.release = asyncio.Event()
+    task = asyncio.create_task(session.catch_up_from_cloud())
+    await eventually(lambda: cloud.calls == [DEVICE])
+    await harness.dp(DPS.state, "totaling")
+    cloud.release.set()
+    await task
+    assert session.robot.state == "totaling"
+    assert session.robot.statistics["total_count"] == 963
+
+
+async def test_a_local_data_point_counts_as_reported_when_it_arrives(harness):
+    session = harness.session()
+    before = int(time.time() * 1000)
+    await harness.dp(DPS.state, "totaling")
+    after = int(time.time() * 1000)
+    assert before <= session.reported_ms[DPS.state] <= after
+
+
+async def test_an_entity_back_from_unavailable_asks_for_a_catch_up(harness):
+    session = harness.session()
+    await session.on_available({"variables": {}})
+    assert session._catch_up.is_set()
+
+
+async def test_a_cloud_that_fails_leaves_the_robot_as_it_was(harness, caplog):
+    session = harness.session()
+    session.cloud = FakeCloud({DPS.state: Reported("totaling", 5)}, error=TuyaCloudError(1010, "token invalid"))
+    await session.catch_up_from_cloud()
+    assert session.robot.state is None
+    assert session.reported_ms == {}
+    assert "status is not available from the cloud: 1010: token invalid" in caplog.text
+
+
+async def test_running_catches_up_each_time_it_is_asked_and_survives_an_error(harness, caplog):
+    session = harness.session()
+    session.cloud = cloud = FakeCloud(error=RuntimeError("unexpected"))
+    task = asyncio.create_task(session.run())
+    session.catch_up()
+    await eventually(lambda: "could not catch up with the robot" in caplog.text)
+    cloud.error = None
+    cloud.points = {DPS.state: Reported("totaling", 5)}
+    session.catch_up()
+    await eventually(lambda: session.robot.state == "totaling")
+    await stop(task)
+    assert cloud.calls == [DEVICE, DEVICE]
+
+
+async def test_local_only_never_asks_the_cloud_for_the_status(harness):
+    session = harness.session()
+    session.cloud = cloud = FakeCloud({DPS.state: Reported("totaling", 5)})
+    await choose_the_local_map(harness)
+    task = asyncio.create_task(session.run())
+    session.catch_up()
+    await asyncio.sleep(0.05)
+    await stop(task)
+    assert cloud.calls == []
+    assert session.robot.state is None
+
+
+async def test_without_a_cloud_nothing_catches_up(harness, caplog):
+    session = harness.session()
+    task = asyncio.create_task(session.run())
+    session.catch_up()
+    await asyncio.sleep(0.05)
+    await stop(task)
+    assert "catch up" not in caplog.text
 
 
 def test_cloud_payload_replaces_the_map(harness):

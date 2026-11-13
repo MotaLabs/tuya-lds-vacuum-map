@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import random
+import time
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,7 @@ from .i18n import Texts
 from .integrations.homeassistant import HomeAssistant, HomeAssistantError
 from .integrations.localtuya import LocalTuyaLink
 from .integrations.mqtt import MqttBridge, Topics, discovery_configs, statistic_configs
-from .integrations.tuya_cloud import TuyaCloud
+from .integrations.tuya_cloud import ERRORS, TuyaCloud
 from .lds.messages import Room, as_object, point_at
 from .map.colors import Color, format_color, parse_color, random_color
 from .map.coverage import Coverage
@@ -73,6 +74,9 @@ class RobotSession:
             self.spots,
             self.rooms,
         )
+        self.cloud = cloud
+        self._catch_up = asyncio.Event()
+        self.reported_ms: dict[int, int] = {}
         self.cloud_sync = (
             CloudMapSync(
                 cloud,
@@ -100,8 +104,45 @@ class RobotSession:
             group.create_task(self.save_loop())
             if self.cloud_sync:
                 group.create_task(self.cloud_sync.run())
+            if self.cloud:
+                group.create_task(self.catch_up_loop())
+
+    def catch_up(self) -> None:
+        self._catch_up.set()
+
+    async def on_available(self, _trigger: Any) -> None:
+        self.catch_up()
+
+    async def catch_up_loop(self) -> None:
+        while True:
+            await self._catch_up.wait()
+            self._catch_up.clear()
+            if self.snapshot.source is MapSource.AUTO:
+                try:
+                    await self.catch_up_from_cloud()
+                except Exception:
+                    log.exception("%s: could not catch up with the robot", self.label)
+
+    async def catch_up_from_cloud(self) -> None:
+        try:
+            reported = await self.cloud.data_points(self.device_id)
+        except ERRORS as error:
+            log.warning("%s: the robot's status is not available from the cloud: %s", self.label, error)
+            return
+        newer = {
+            dp: point
+            for dp, point in reported.items()
+            if dp in self.robot.status_dps and (dp not in self.reported_ms or point.at_ms > self.reported_ms[dp])
+        }
+        log.info("%s: caught up with %d data points from the cloud", self.label, len(newer))
+        self.reported_ms.update({dp: point.at_ms for dp, point in newer.items()})
+        await self.apply({dp: point.value for dp, point in newer.items()})
 
     async def on_data_points(self, data_points: dict[int, Any]) -> None:
+        self.reported_ms.update(dict.fromkeys(data_points, int(time.time() * 1000)))
+        await self.apply(data_points)
+
+    async def apply(self, data_points: dict[int, Any]) -> None:
         update = self.robot.apply(data_points)
         await self.publish_statistics(sorted(update.statistics))
         if update.new_path:

@@ -5,9 +5,11 @@ import json
 import urllib.request
 
 import pytest
+from hypothesis import HealthCheck, given, settings
 
+from support.strategies import json_values
 from tuya_lds_vacuum_map.integrations import tuya_cloud
-from tuya_lds_vacuum_map.integrations.tuya_cloud import TuyaCloud, TuyaCloudError
+from tuya_lds_vacuum_map.integrations.tuya_cloud import Reported, TuyaCloud, TuyaCloudError
 
 BASE = tuya_cloud.ENDPOINTS["us"]
 TOKEN_PATH = "/v1.0/token?grant_type=1"
@@ -15,6 +17,7 @@ FILES_PATH = "/v1.0/users/sweepers/file/dev/realtime-map"
 LAYOUT_URL = "https://files.example/layout"
 LAYOUT = {"infoType": 20002, "data": {"width": 1}}
 FILES = [{"map_type": 1, "map_url": "https://files.example/path"}, {"map_type": 0, "map_url": LAYOUT_URL}]
+SHADOW_PATH = "/v2.0/cloud/thing/dev/shadow/properties"
 
 
 class FakeHttp:
@@ -138,3 +141,45 @@ async def test_an_answer_of_the_wrong_shape_is_a_cloud_error(http, path, answer,
     with pytest.raises(TuyaCloudError, match=reason):
         await TuyaCloud("id", "secret", "us").realtime_map("dev")
     assert "file:///etc/passwd" not in http.urls()
+
+
+async def test_the_data_points_are_the_device_shadow_with_the_time_of_each(http):
+    properties = [
+        {"dp_id": 105, "code": "robot_state", "value": "fullcharge", "time": 1700000000123},
+        {"dp_id": "118", "code": "total_clean_count", "value": 963, "time": "1700000000456"},
+        {"dp_id": 144, "value": True, "time": True},
+        {"dp_id": 107, "value": 1440},
+        {"dp_id": 7.0, "value": 1},
+        {"dp_id": True, "value": 1},
+        {"dp_id": "\u00b2", "value": 1},
+        {"code": "no_dp", "value": 1},
+        "not an object",
+    ]
+    http.answers[BASE + SHADOW_PATH] = [{"success": True, "result": {"properties": properties}}]
+    assert await TuyaCloud("id", "secret", "us").data_points("dev") == {
+        105: Reported("fullcharge", 1700000000123),
+        118: Reported(963, 0),
+        144: Reported(True, 0),
+        107: Reported(1440, 0),
+    }
+    assert http.urls() == [BASE + TOKEN_PATH, BASE + SHADOW_PATH]
+
+
+@pytest.mark.parametrize("result", [None, [], {}, {"properties": {"dp_id": 105}}])
+async def test_a_shadow_without_properties_has_no_data_points(http, result):
+    http.answers[BASE + SHADOW_PATH] = [{"success": True, "result": result}]
+    assert await TuyaCloud("id", "secret", "us").data_points("dev") == {}
+
+
+async def test_a_refused_shadow_is_a_cloud_error(http):
+    http.answers[BASE + SHADOW_PATH] = [{"success": False, "code": 2008, "msg": "command or value not support"}]
+    with pytest.raises(TuyaCloudError, match="not support"):
+        await TuyaCloud("id", "secret", "us").data_points("dev")
+
+
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(json_values)
+def test_no_shadow_breaks_the_reader(http, result):
+    http.answers[BASE + SHADOW_PATH] = [{"success": True, "result": result}]
+    points = TuyaCloud("id", "secret", "us")._data_points("dev")
+    assert all(isinstance(dp, int) and isinstance(point.at_ms, int) for dp, point in points.items())

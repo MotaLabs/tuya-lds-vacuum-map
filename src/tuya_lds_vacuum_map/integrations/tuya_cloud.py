@@ -1,10 +1,12 @@
 import asyncio
 import hashlib
 import hmac
+import http.client
 import json
 import time
 import urllib.request
 import uuid
+from typing import Any, NamedTuple
 
 from ..lds.messages import as_object, as_objects, as_optional_int, as_text
 
@@ -22,6 +24,18 @@ class TuyaCloudError(Exception):
     def __init__(self, code, message) -> None:
         super().__init__(f"{code}: {message}")
         self.code = code
+
+
+ERRORS = (TuyaCloudError, OSError, ValueError, http.client.HTTPException)
+
+
+class Reported(NamedTuple):
+    value: Any
+    at_ms: int
+
+
+def _milliseconds(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 class TuyaCloud:
@@ -46,6 +60,17 @@ class TuyaCloud:
             raise TuyaCloudError("no-layout", f"the layout file has no https address: {url!r}")
         with urllib.request.urlopen(url, timeout=self.timeout) as response:
             return json.loads(response.read())
+
+    async def data_points(self, device_id: str) -> dict[int, Reported]:
+        return await asyncio.to_thread(self._data_points, device_id)
+
+    def _data_points(self, device_id: str) -> dict[int, Reported]:
+        result = as_object(self._get(f"/v2.0/cloud/thing/{device_id}/shadow/properties", self._access_token()))
+        return {
+            int(dp): Reported(item.get("value"), _milliseconds(item.get("time")))
+            for item in as_objects(result.get("properties"))
+            if str(dp := item.get("dp_id")).isdecimal()
+        }
 
     def _access_token(self) -> str:
         if self._token and time.time() < self._token_expires:

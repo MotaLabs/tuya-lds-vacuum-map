@@ -2,6 +2,8 @@ import asyncio
 
 from websockets.exceptions import ConnectionClosedError
 
+from tuya_lds_vacuum_map.integrations.tuya_cloud import Reported
+
 
 class FakeClient:
     def __init__(self) -> None:
@@ -35,3 +37,19 @@ class FakeCloudSync:
     async def run(self) -> None:
         self.calls.append("run")
         await asyncio.Event().wait()
+
+
+class FakeCloud:
+    def __init__(self, points: dict[int, Reported] | None = None, error: Exception | None = None) -> None:
+        self.points = points or {}
+        self.error = error
+        self.calls: list[str] = []
+        self.release: asyncio.Event | None = None
+
+    async def data_points(self, device_id: str) -> dict[int, Reported]:
+        self.calls.append(device_id)
+        if self.release:
+            await self.release.wait()
+        if self.error:
+            raise self.error
+        return dict(self.points)

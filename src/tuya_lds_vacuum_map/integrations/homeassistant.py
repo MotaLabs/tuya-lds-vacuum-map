@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 import websockets
 
@@ -10,6 +11,8 @@ log = logging.getLogger(__name__)
 CALL_TIMEOUT_SECONDS = 30
 
 EventHandler = Callable[[str, dict], Awaitable[None]]
+ReadyHandler = Callable[[], Awaitable[None]]
+MessageHandler = Callable[[Any], Awaitable[None]]
 
 
 class HomeAssistantError(Exception):
@@ -24,8 +27,14 @@ class HomeAssistant:
         self._ws = None
         self._next_id = 1
         self._pending: dict[int, asyncio.Future] = {}
+        self._handlers: dict[int, MessageHandler] = {}
 
-    async def run(self, event_types: list[str], on_event: EventHandler) -> None:
+    async def run(
+        self,
+        event_types: list[str],
+        on_event: EventHandler,
+        on_ready: ReadyHandler | None = None,
+    ) -> None:
         backoff = 1
         while True:
             try:
@@ -42,11 +51,14 @@ class HomeAssistant:
                     }
                     waiting = set(subscriptions)
                     if not waiting:
-                        self._ready()
+                        await self._ready(on_ready)
                         backoff = 1
                     async for raw in ws:
                         message = json.loads(raw)
-                        if message.get("type") == "event":
+                        handler = self._handlers.get(message.get("id"))
+                        if message.get("type") == "event" and handler:
+                            await handler(message.get("event"))
+                        elif message.get("type") == "event":
                             event = message["event"]
                             await on_event(event["event_type"], event.get("data") or {})
                         elif message.get("type") == "result" and message.get("id") in subscriptions:
@@ -55,7 +67,7 @@ class HomeAssistant:
                             if message["id"] in waiting:
                                 waiting.discard(message["id"])
                                 if not waiting:
-                                    self._ready()
+                                    await self._ready(on_ready)
                                     backoff = 1
                         elif message.get("type") == "result":
                             future = self._pending.pop(message.get("id"), None)
@@ -70,12 +82,15 @@ class HomeAssistant:
                     if not future.done():
                         future.set_exception(HomeAssistantError("connection lost"))
                 self._pending.clear()
+                self._handlers.clear()
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 60)
 
-    def _ready(self) -> None:
+    async def _ready(self, on_ready: ReadyHandler | None) -> None:
         self.connected.set()
         log.info("connected to Home Assistant")
+        if on_ready:
+            await on_ready()
 
     async def call_service(self, domain: str, service: str, data: dict) -> None:
         reply = await self._call({"type": "call_service", "domain": domain, "service": service, "service_data": data})
@@ -87,10 +102,22 @@ class HomeAssistant:
         if not reply.get("success"):
             raise HomeAssistantError(f"fire_event {event_type} failed: {reply.get('error')}")
 
-    async def _call(self, payload: dict) -> dict:
+    async def request(self, payload: dict) -> Any:
+        reply = await self._call(payload)
+        if not reply.get("success"):
+            raise HomeAssistantError(f"{payload['type']} failed: {reply.get('error')}")
+        return reply.get("result")
+
+    async def subscribe(self, payload: dict, handler: MessageHandler) -> None:
+        reply = await self._call(payload, handler)
+        if not reply.get("success"):
+            self._handlers.pop(reply.get("id"), None)
+            raise HomeAssistantError(f"{payload['type']} failed: {reply.get('error')}")
+
+    async def _call(self, payload: dict, handler: MessageHandler | None = None) -> dict:
         async with asyncio.timeout(CALL_TIMEOUT_SECONDS):
             await self.connected.wait()
-            return await (await self._send(payload))
+            return await (await self._send(payload, handler))
 
     async def _post(self, payload: dict) -> int:
         message_id = self._take_id()
@@ -102,14 +129,17 @@ class HomeAssistant:
         self._next_id += 1
         return message_id
 
-    async def _send(self, payload: dict) -> asyncio.Future:
+    async def _send(self, payload: dict, handler: MessageHandler | None = None) -> asyncio.Future:
         message_id = self._take_id()
         future = asyncio.get_running_loop().create_future()
         self._pending[message_id] = future
+        if handler:
+            self._handlers[message_id] = handler
         try:
             await self._ws.send(json.dumps({**payload, "id": message_id}))
         except websockets.WebSocketException as error:
             self._pending.pop(message_id, None)
+            self._handlers.pop(message_id, None)
             if future.done():
                 future.exception()
             raise HomeAssistantError(f"websocket closed: {error}") from error

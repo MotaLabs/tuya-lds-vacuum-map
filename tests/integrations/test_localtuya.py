@@ -2,7 +2,14 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from support.strategies import json_values
-from tuya_lds_vacuum_map.integrations.localtuya import DP_EVENT, STATUS_EVENT, LocalTuyaLink, data_points
+from tuya_lds_vacuum_map.integrations.localtuya import (
+    DP_EVENT,
+    STATUS_EVENT,
+    LocalTuyaLink,
+    available_trigger,
+    data_points,
+    entity_ids,
+)
 
 
 class FakeHomeAssistant:
@@ -44,3 +51,30 @@ def test_no_event_data_breaks_the_reader(event_type, data):
     device_id, points = data_points(event_type, data)
     assert device_id is None or isinstance(device_id, str)
     assert all(isinstance(dp, int) for dp in points)
+
+
+def test_a_robots_entities_are_localtuyas_with_its_device_in_the_unique_id():
+    entries = [
+        {"entity_id": "vacuum.robot", "platform": "localtuya", "unique_id": "local_dev_1"},
+        {"entity_id": "sensor.battery", "platform": "localtuya", "unique_id": "local_dev_106"},
+        {"entity_id": "switch.other", "platform": "localtuya", "unique_id": "local_device2_1"},
+        {"entity_id": "sensor.map", "platform": "mqtt", "unique_id": "local_dev_2"},
+        {"entity_id": "sensor.no_id", "platform": "localtuya"},
+        {"entity_id": None, "platform": "localtuya", "unique_id": "local_dev_3"},
+        {"entity_id": "sensor.number_id", "platform": "localtuya", "unique_id": 4},
+        "not an entry",
+    ]
+    assert entity_ids(entries, "dev") == ["sensor.battery", "vacuum.robot"]
+    assert entity_ids({"entity_id": "vacuum.robot"}, "dev") == []
+
+
+def test_the_trigger_fires_when_an_entity_leaves_unavailable():
+    assert available_trigger(["vacuum.robot"]) == {
+        "type": "subscribe_trigger",
+        "trigger": {"platform": "state", "entity_id": ["vacuum.robot"], "from": "unavailable"},
+    }
+
+
+@given(json_values)
+def test_no_registry_answer_breaks_the_entity_lookup(entries):
+    assert all(isinstance(entity_id, str) for entity_id in entity_ids(entries, "dev"))

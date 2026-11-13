@@ -3,6 +3,7 @@ import base64
 import colorsys
 import dataclasses
 import json
+import logging
 import random
 import tempfile
 import time
@@ -374,13 +375,15 @@ def rooms_of_map(map_id: int) -> dict:
     return message
 
 
-async def test_a_room_list_of_another_map_drops_the_waiting_list(harness):
+async def test_a_room_list_of_another_map_drops_the_waiting_list(harness, caplog):
+    caplog.set_level(logging.INFO, logger="tuya_lds_vacuum_map.gestures")
     session = harness.session()
     await harness.message(session.topics.auto_start_set, "OFF")
     await room_list(harness, cell_center_mm(30, 14))
     await harness.dp(DPS.raw, encode_raw(rooms_of_map(7)))
     assert session.rooms.ids == []
     assert session.scene().room_order == {}
+    assert "the map changed from 42 to 7, so any waiting pick is dropped" in caplog.text
     await harness.message(session.topics.start, "PRESS")
     assert harness.services == []
 

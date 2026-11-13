@@ -9,15 +9,25 @@ SQUARE = ((0, 0), (100, 0), (100, 100), (0, 100))
 TRIANGLE = ((0, 0), (100, 0), (0, 100))
 
 
+def shifted(polygon: tuple[tuple[int, int], ...], dx: int, dy: int) -> tuple[tuple[int, int], ...]:
+    return tuple((x + dx, y + dy) for x, y in polygon)
+
+
 def test_point_in_polygon():
     assert point_in_polygon(50, 50, SQUARE)
     assert not point_in_polygon(150, 50, SQUARE)
     assert not point_in_polygon(50, -1, SQUARE)
 
 
+@pytest.mark.parametrize(("dx", "dy"), [(0, 0), (300, -200)])
 @pytest.mark.parametrize(("x", "y", "inside"), [(40, 40, True), (49, 50, True), (51, 50, False), (60, 60, False)])
-def test_a_slanted_edge_splits_inside_from_outside(x, y, inside):
-    assert point_in_polygon(x, y, TRIANGLE) is inside
+def test_a_slanted_edge_splits_inside_from_outside(x, y, inside, dx, dy):
+    assert point_in_polygon(x + dx, y + dy, shifted(TRIANGLE, dx, dy)) is inside
+
+
+def test_a_point_on_an_edge_two_areas_share_falls_in_one_of_them():
+    left, right = SQUARE, shifted(SQUARE, 100, 0)
+    assert (point_in_polygon(100, 50, left), point_in_polygon(100, 50, right)) == (False, True)
 
 
 def test_a_point_level_with_a_flat_edge_is_answered():

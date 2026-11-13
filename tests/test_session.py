@@ -652,9 +652,10 @@ def test_level_labels_follow_the_profile_and_language(tmp_path):
     assert Harness(tmp_path, language="pt-BR").session().fan_labels["quiet"] == "Eco"
 
 
-def test_device_info(harness):
+def test_device_info(harness, monkeypatch):
+    monkeypatch.setattr("tuya_lds_vacuum_map.session.__version__", "9.9.9")
     info = harness.session().device_info()
-    assert (info["model"], info["name"]) == ("lds-robot", "Vacuum map 123456")
+    assert (info["model"], info["name"], info["sw_version"]) == ("lds-robot", "Vacuum map 123456", "9.9.9")
 
 
 async def select_right(harness: Harness) -> None:

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import signal
 
@@ -34,7 +35,9 @@ def test_profile_and_language_errors_stop_the_start(env, name, value, message):
         entry.main()
 
 
-def test_main_builds_the_app_from_the_environment(env):
+def test_main_builds_the_app_from_the_environment(env, caplog):
+    caplog.set_level(logging.INFO, logger=entry.__name__)
+    env.setattr(entry, "__version__", "9.9.9")
     env.setenv("LANGUAGE", "pt-BR")
     started = []
 
@@ -46,6 +49,7 @@ def test_main_builds_the_app_from_the_environment(env):
     [app] = started
     session = app.sessions["dev123456"]
     assert (session.profile.name, session.texts.map) == ("lds-robot", "Mapa")
+    assert "tuya-lds-vacuum-map 9.9.9" in caplog.text
 
 
 @pytest.mark.parametrize("stop", [signal.SIGTERM, signal.SIGINT])

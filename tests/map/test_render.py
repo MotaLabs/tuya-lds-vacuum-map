@@ -1,3 +1,4 @@
+import dataclasses
 import io
 
 from PIL import Image
@@ -248,3 +249,24 @@ def test_an_area_of_two_vertices_draws_its_dashed_line(payload):
     image = render(Scene(grid, rooms=UNNAMED, room_colors=COLORS, areas=(line,)))
     _, y = pixel_of_cell(10, 10)
     assert any(image.getpixel((x, y)) == (40, 40, 40) for x in range(5 * SCALE, 16 * SCALE))
+
+
+def test_overlays_land_where_the_calibration_says_far_from_the_origin(payload):
+    grid = dataclasses.replace(GridMap.from_cloud(payload), x_min=-80.0, y_min=-60.6)
+    points = calibration(grid, SCALE)
+    assert points == [
+        {"vacuum": {"x": -80000, "y": -60600}, "map": {"x": 0, "y": HEIGHT * SCALE}},
+        {"vacuum": {"x": -78000, "y": -60600}, "map": {"x": WIDTH * SCALE, "y": HEIGHT * SCALE}},
+        {"vacuum": {"x": -80000, "y": -59100}, "map": {"x": 0, "y": 0}},
+    ]
+    robot = (-80000 + 525, -60600 + 1025)
+    image = render(Scene(grid, rooms=UNNAMED, room_colors=COLORS, robot=robot))
+    assert image.getpixel(to_map(points, *robot)) == (60, 60, 60)
+
+
+def test_overlays_land_where_the_calibration_says_on_a_map_drawn_smaller(monkeypatch, payload):
+    monkeypatch.setattr(render_module, "MAX_IMAGE_PIXELS", WIDTH * HEIGHT * 4)
+    grid = GridMap.from_cloud(payload)
+    robot = cell_center_mm(10, 20)
+    image, points = Renderer(CODES, STYLE).render(Scene(grid, rooms=UNNAMED, room_colors=COLORS, robot=robot))
+    assert Image.open(io.BytesIO(image)).convert("RGB").getpixel(to_map(points, *robot)) == (60, 60, 60)

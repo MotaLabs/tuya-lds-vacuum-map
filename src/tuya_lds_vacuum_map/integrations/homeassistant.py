@@ -93,9 +93,17 @@ class HomeAssistant:
             await on_ready()
 
     async def call_service(self, domain: str, service: str, data: dict) -> None:
-        reply = await self._call({"type": "call_service", "domain": domain, "service": service, "service_data": data})
+        await self._call_service(domain, service, data, {})
+
+    async def service_response(self, domain: str, service: str, data: dict) -> Any:
+        return await self._call_service(domain, service, data, {"return_response": True})
+
+    async def _call_service(self, domain: str, service: str, data: dict, options: dict) -> Any:
+        payload = {"type": "call_service", "domain": domain, "service": service, "service_data": data, **options}
+        reply = await self._call(payload)
         if not reply.get("success"):
             raise HomeAssistantError(f"{domain}.{service} failed: {reply.get('error')}")
+        return reply.get("result")
 
     async def fire_event(self, event_type: str, data: dict) -> None:
         reply = await self._call({"type": "fire_event", "event_type": event_type, "event_data": data})

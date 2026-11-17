@@ -89,7 +89,8 @@ include `path_comm` (123) and `comm_raw` (127), are likely to work. If you have 
 - Home Assistant with:
   - [LocalTuya](https://github.com/xZetsubou/hass-localtuya) set up for the robot. The service listens to its
     `localtuya_device_dp_triggered` and `localtuya_status_update` events, sends commands with
-    `localtuya.set_dp` and reads the robot's status with `localtuya.get_status` when LocalTuya has it.
+    `localtuya.set_dp` and reads the robot's status with `localtuya.get_status` when LocalTuya has it (proposed
+    upstream in [hass-localtuya#916](https://github.com/xZetsubou/hass-localtuya/pull/916)).
   - The MQTT integration, with discovery on.
   - [xiaomi-vacuum-map-card](https://github.com/PiotrMachowski/lovelace-xiaomi-vacuum-map-card), from HACS.
   - A long-lived access token of an admin user. Home Assistant lets only admins subscribe to the LocalTuya events,

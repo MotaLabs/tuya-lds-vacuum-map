@@ -65,7 +65,7 @@ class RobotSession:
             log.warning("%s: the saved path could not be read: %s", self.label, error)
         self.renderer = Renderer(profile.cells, Style(scale=settings.map_scale, font_path=settings.font_path))
         self.dirty = asyncio.Event()
-        link = LocalTuyaLink(ha, config.device_id, profile.data_points.raw)
+        self.link = link = LocalTuyaLink(ha, config.device_id, profile.data_points.raw)
         self.spots = SpotPicker(
             self.robot, link, geometry.spot_size_mm, self.auto_start_delay, settings.timing.spot_preview, self.dirty.set
         )
@@ -109,8 +109,7 @@ class RobotSession:
             group.create_task(self.save_loop())
             if self.cloud_sync:
                 group.create_task(self.cloud_sync.run())
-            if self.cloud:
-                group.create_task(self.catch_up_loop())
+            group.create_task(self.catch_up_loop())
 
     def catch_up(self) -> None:
         self._catch_up.set()
@@ -122,11 +121,29 @@ class RobotSession:
         while True:
             await self._catch_up.wait()
             self._catch_up.clear()
-            if self.snapshot.source is MapSource.AUTO:
-                try:
+            try:
+                if not await self.catch_up_locally() and self.cloud and self.snapshot.source is MapSource.AUTO:
                     await self.catch_up_from_cloud()
-                except Exception:
-                    log.exception("%s: could not catch up with the robot", self.label)
+            except Exception:
+                log.exception("%s: could not catch up with the robot", self.label)
+
+    async def catch_up_locally(self) -> bool:
+        asked_ms = int(time.time() * 1000)
+        try:
+            reported = await self.link.status()
+        except (HomeAssistantError, TimeoutError) as error:
+            reason = str(error) or type(error).__name__
+            log.info("%s: the robot's status is not available from LocalTuya: %s", self.label, reason)
+            return False
+        newer = {
+            dp: value
+            for dp, value in reported.items()
+            if dp in self.robot.status_dps and self.reported_ms.get(dp, 0) < asked_ms
+        }
+        log.info("%s: caught up with %d data points from LocalTuya", self.label, len(newer))
+        self.reported_ms.update(dict.fromkeys(newer, asked_ms))
+        await self.apply(newer)
+        return bool(reported)
 
     async def catch_up_from_cloud(self) -> None:
         try:

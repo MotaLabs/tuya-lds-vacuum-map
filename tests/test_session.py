@@ -20,6 +20,7 @@ from support.maps import CODES, PROFILE, build_cells, cell_center_mm, cloud_payl
 from support.strategies import json_scalars, json_values, path_chunks, room_lists, spot_commands
 from support.waiting import eventually, stop
 from tuya_lds_vacuum_map.config import CloudCredentials
+from tuya_lds_vacuum_map.integrations.homeassistant import HomeAssistantError
 from tuya_lds_vacuum_map.integrations.localtuya import DP_EVENT, STATUS_EVENT
 from tuya_lds_vacuum_map.integrations.tuya_cloud import Reported, TuyaCloudError
 from tuya_lds_vacuum_map.lds.codec import decode_raw, encode_name, encode_raw
@@ -227,20 +228,88 @@ async def test_local_only_never_asks_the_cloud_for_the_status(harness):
     await choose_the_local_map(harness)
     task = asyncio.create_task(session.run())
     session.catch_up()
+    await eventually(lambda: harness.status_requests == [DEVICE])
     await asyncio.sleep(0.05)
     await stop(task)
     assert cloud.calls == []
     assert session.robot.state is None
 
 
-async def test_without_a_cloud_nothing_catches_up(harness, caplog):
+async def test_without_a_cloud_the_robot_catches_up_from_localtuya(harness):
     session = harness.session()
+    harness.statuses = {str(DPS.state): "totaling"}
     task = asyncio.create_task(session.run())
     session.catch_up()
-    await asyncio.sleep(0.05)
+    await eventually(lambda: session.robot.state == "totaling")
     await stop(task)
-    assert "catch up" not in caplog.text
     assert session.cloud_sync is None
+
+
+async def test_catching_up_applies_the_robot_status_from_localtuya(harness, caplog):
+    caplog.set_level(logging.INFO)
+    session = harness.session()
+    harness.statuses = {
+        str(DPS.state): "totaling",
+        str(DPS.total_count): 963,
+        str(DPS.raw): encode_raw(rooms_message()),
+        "0": "restore",
+    }
+    before = int(time.time() * 1000)
+    assert await session.catch_up_locally() is True
+    assert harness.status_requests == [DEVICE]
+    assert (session.robot.state, session.robot.rooms) == ("totaling", None)
+    assert harness.client.last(session.topics.statistic("total_count")) == "963"
+    assert session.reported_ms.keys() == {DPS.state, DPS.total_count}
+    assert before <= session.reported_ms[DPS.state] <= int(time.time() * 1000)
+    assert "caught up with 2 data points from LocalTuya" in caplog.text
+
+
+async def test_a_local_value_that_arrives_while_localtuya_answers_is_kept(harness):
+    session = harness.session()
+    harness.statuses = {str(DPS.state): "chargring", str(DPS.total_count): 963}
+    harness.status_gate = asyncio.Event()
+    task = asyncio.create_task(session.catch_up_locally())
+    await eventually(lambda: harness.status_requests == [DEVICE])
+    await harness.dp(DPS.state, "totaling")
+    harness.status_gate.set()
+    await task
+    assert session.robot.state == "totaling"
+    assert session.robot.statistics["total_count"] == 963
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (
+            HomeAssistantError("localtuya.get_status failed: not connected to device"),
+            "localtuya.get_status failed: not connected to device",
+        ),
+        (TimeoutError(), "TimeoutError"),
+    ],
+)
+async def test_a_localtuya_that_cannot_answer_leaves_the_robot_as_it_was(harness, caplog, error, reason):
+    caplog.set_level(logging.INFO)
+    session = harness.session()
+    harness.statuses = error
+    assert await session.catch_up_locally() is False
+    assert session.robot.state is None
+    assert session.reported_ms == {}
+    assert f"status is not available from LocalTuya: {reason}" in caplog.text
+
+
+async def test_a_local_answer_spares_the_cloud_and_an_empty_one_does_not(harness):
+    session = harness.session()
+    session.cloud = cloud = FakeCloud({DPS.total_count: Reported(964, 5)})
+    harness.statuses = {str(DPS.state): "totaling"}
+    task = asyncio.create_task(session.run())
+    session.catch_up()
+    await eventually(lambda: session.robot.state == "totaling")
+    assert cloud.calls == []
+    harness.statuses = {}
+    session.catch_up()
+    await eventually(lambda: cloud.calls == [DEVICE])
+    await stop(task)
+    assert session.robot.statistics["total_count"] == 964
 
 
 async def test_a_cloud_project_syncs_the_cloud_map_while_the_map_is_automatic(tmp_path):

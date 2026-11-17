@@ -203,7 +203,7 @@ async def test_the_watch_runs_on_each_ready_and_survives_a_refusal_or_a_timeout(
     await stop(task)
 
 
-async def test_the_watch_runs_only_with_a_cloud_project(tmp_path):
+async def test_the_watch_runs_with_or_without_a_cloud_project(tmp_path):
     started: list[bool] = []
 
     async def idle(*_) -> None:
@@ -228,12 +228,10 @@ async def test_the_watch_runs_only_with_a_cloud_project(tmp_path):
             session.run = idle
         app.watch_loop = watch_loop
         task = asyncio.create_task(app.run())
-        if cloud:
-            await eventually(lambda: started == [True])
-        else:
-            await asyncio.sleep(0.02)
+        count = len(started) + 1
+        await eventually(lambda count=count: len(started) == count)
         await stop(task)
-    assert started == [True]
+    assert started == [True, True]
 
 
 def test_each_setting_reaches_its_client(tmp_path):

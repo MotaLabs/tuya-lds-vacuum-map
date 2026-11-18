@@ -9,6 +9,7 @@ from tuya_lds_vacuum_map.integrations.localtuya import (
     available_trigger,
     data_points,
     entity_ids,
+    status_points,
 )
 
 
@@ -18,6 +19,10 @@ class FakeHomeAssistant:
 
     async def call_service(self, domain: str, service: str, data: dict) -> None:
         self.calls.append((domain, service, data))
+
+    async def service_response(self, domain: str, service: str, data: dict) -> dict:
+        self.calls.append((domain, service, data))
+        return {"context": {}, "response": {"status": {"105": "idle", "0": "restore", "online": True}}}
 
 
 def test_dp_event_names_its_device():
@@ -38,6 +43,18 @@ async def test_send_raw_sets_the_raw_data_point_as_a_number():
     ha = FakeHomeAssistant()
     await LocalTuyaLink(ha, "dev", 127).send_raw("abc")
     assert ha.calls == [("localtuya", "set_dp", {"device_id": "dev", "dp": 127, "value": "abc"})]
+
+
+async def test_status_asks_localtuya_for_the_robots_numbered_data_points():
+    ha = FakeHomeAssistant()
+    assert await LocalTuyaLink(ha, "dev", 127).status() == {105: "idle", 0: "restore"}
+    assert ha.calls == [("localtuya", "get_status", {"device_id": "dev"})]
+
+
+@given(json_values)
+def test_no_service_result_breaks_the_status_reader(result):
+    assert all(isinstance(dp, int) for dp in status_points(result))
+    assert all(isinstance(dp, int) for dp in status_points({"response": {"status": result}}))
 
 
 def test_data_points_that_are_not_plain_numbers_are_dropped():

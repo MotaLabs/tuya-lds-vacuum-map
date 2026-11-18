@@ -450,6 +450,38 @@ async def test_services_and_events_go_out_with_their_fields_and_ids_that_grow():
     assert ids[0] < ids[1]
 
 
+async def test_a_service_asked_for_its_response_returns_the_result():
+    received: list[dict] = []
+    result = {"context": {"id": "c1"}, "response": {"status": {"1": True}}}
+    answers = {"call_service": {"success": True, "result": result}}
+    async with serve(answering_server(answers, received=received), "127.0.0.1", 0) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
+        task = asyncio.create_task(ha.run([], no_event))
+        assert await ha.service_response("localtuya", "get_status", {"device_id": "dev"}) == result
+        await stop(task)
+    assert [{key: value for key, value in message.items() if key != "id"} for message in received] == [
+        {
+            "type": "call_service",
+            "domain": "localtuya",
+            "service": "get_status",
+            "service_data": {"device_id": "dev"},
+            "return_response": True,
+        }
+    ]
+
+
+async def test_a_refused_service_response_names_itself_and_the_error():
+    answers = {"call_service": {"success": False, "error": {"code": "not_found"}}}
+    async with serve(answering_server(answers), "127.0.0.1", 0) as listener:
+        port = listener.sockets[0].getsockname()[1]
+        ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
+        task = asyncio.create_task(ha.run([], no_event))
+        with pytest.raises(HomeAssistantError, match=r"^localtuya\.get_status failed: .*not_found"):
+            await ha.service_response("localtuya", "get_status", {"device_id": "dev"})
+        await stop(task)
+
+
 async def test_a_refused_service_names_itself_and_the_error():
     answers = {"call_service": {"success": False, "error": "unknown service"}}
     async with serve(answering_server(answers), "127.0.0.1", 0) as listener:

@@ -17,7 +17,15 @@ def data_points(event_type: str, data: Any) -> tuple[str | None, dict[int, Any]]
         raw = as_object(data.get("new_status"))
     else:
         raw = {}
-    return as_text(data.get("device_id")), {int(dp): value for dp, value in raw.items() if str(dp).isdecimal()}
+    return as_text(data.get("device_id")), numbered(raw)
+
+
+def status_points(result: Any) -> dict[int, Any]:
+    return numbered(as_object(as_object(as_object(result).get("response")).get("status")))
+
+
+def numbered(raw: dict) -> dict[int, Any]:
+    return {int(dp): value for dp, value in raw.items() if str(dp).isdecimal()}
 
 
 def entity_ids(entries: Any, device_id: str) -> list[str]:
@@ -48,3 +56,6 @@ class LocalTuyaLink:
         await self.ha.call_service(
             "localtuya", "set_dp", {"device_id": self.device_id, "dp": self.raw_dp, "value": value}
         )
+
+    async def status(self) -> dict[int, Any]:
+        return status_points(await self.ha.service_response(DOMAIN, "get_status", {"device_id": self.device_id}))

@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Any
 
@@ -6,6 +7,7 @@ from support.maps import PROFILE
 from tuya_lds_vacuum_map.app import App
 from tuya_lds_vacuum_map.config import RobotSettings, Settings, Timing
 from tuya_lds_vacuum_map.i18n import load_texts
+from tuya_lds_vacuum_map.integrations.homeassistant import HomeAssistantError
 from tuya_lds_vacuum_map.integrations.localtuya import DP_EVENT
 from tuya_lds_vacuum_map.profiles import DEFAULT_PROFILE, Profile
 from tuya_lds_vacuum_map.session import RobotSession
@@ -39,7 +41,11 @@ class Harness:
         self.app.mqtt._client = self.client
         self.services: list[tuple] = []
         self.events: list[tuple] = []
+        self.statuses: dict | Exception | None = None
+        self.status_gate: asyncio.Event | None = None
+        self.status_requests: list[str] = []
         self.app.ha.call_service = self.call_service
+        self.app.ha.service_response = self.service_response
         self.app.ha.fire_event = self.fire_event
 
     def session(self, device_id: str = DEVICE) -> RobotSession:
@@ -47,6 +53,16 @@ class Harness:
 
     async def call_service(self, domain: str, service: str, data: dict) -> None:
         self.services.append((domain, service, data))
+
+    async def service_response(self, domain: str, service: str, data: dict) -> dict:
+        self.status_requests.append(data["device_id"])
+        if self.status_gate:
+            await self.status_gate.wait()
+        if isinstance(self.statuses, Exception):
+            raise self.statuses
+        if self.statuses is None:
+            raise HomeAssistantError(f"{domain}.{service} failed: not_found")
+        return {"context": {}, "response": {"status": self.statuses}}
 
     async def fire_event(self, event_type: str, data: dict) -> None:
         self.events.append((event_type, data))

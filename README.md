@@ -58,9 +58,12 @@ flowchart LR
    (DP 127). LocalTuya fires an event only when a value changes, and not for the first status it reads after
    setting the robot up, so whatever the robot changed while LocalTuya could not reach it would wait for its
    next change. When the service connects to Home Assistant, and each time one of the robot's LocalTuya
-   entities comes back from unavailable, it reads the robot's state, room mode and statistics from the Tuya
-   cloud, if a cloud project is configured and the map source is Automatic. A cloud value replaces the
-   service's only when the robot reported it after the value the service last got from LocalTuya.
+   entities comes back from unavailable, it asks LocalTuya for the robot's state, room mode and statistics
+   with `localtuya.get_status`. When LocalTuya has no such service, cannot reach the robot or answers with an
+   empty status, as it does right after it connects, the service reads them from the Tuya cloud instead, if a
+   cloud project is configured and the map source is Automatic.
+   A cloud value replaces the service's only when the robot reported it after the value the service last
+   got from LocalTuya.
 2. When a cloud project is configured, it downloads the robot's realtime map from the Tuya cloud during and
    after each cleaning. The map is a grid of 5 cm cells where each cell holds a room id, a wall or nothing.
 3. It draws the map with Pillow, flipped and coloured like the app, adds names, settings, areas, the dock,
@@ -86,8 +89,9 @@ include `path_comm` (123) and `comm_raw` (127), are likely to work. If you have 
 
 - Home Assistant with:
   - [LocalTuya](https://github.com/xZetsubou/hass-localtuya) set up for the robot. The service listens to its
-    `localtuya_device_dp_triggered` and `localtuya_status_update` events and sends commands with
-    `localtuya.set_dp`.
+    `localtuya_device_dp_triggered` and `localtuya_status_update` events, sends commands with
+    `localtuya.set_dp` and reads the robot's status with `localtuya.get_status` when LocalTuya has it (proposed
+    upstream in [hass-localtuya#916](https://github.com/xZetsubou/hass-localtuya/pull/916)).
   - The MQTT integration, with discovery on.
   - [xiaomi-vacuum-map-card](https://github.com/PiotrMachowski/lovelace-xiaomi-vacuum-map-card), from HACS.
   - A long-lived access token of an admin user. Home Assistant lets only admins subscribe to the LocalTuya events,

@@ -36,8 +36,7 @@ class App:
         try:
             async with asyncio.TaskGroup() as group:
                 group.create_task(self.ha.run(list(EVENT_TYPES), self.on_ha_event, self.on_ha_ready))
-                if self.cloud:
-                    group.create_task(self.watch_loop())
+                group.create_task(self.watch_loop())
                 group.create_task(self.mqtt.run(list(self.routes), self.on_mqtt_connect, self.on_mqtt_message))
                 for session in self.sessions.values():
                     group.create_task(session.run())

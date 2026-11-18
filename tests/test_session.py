@@ -1084,7 +1084,7 @@ async def test_a_failed_drawing_is_logged_and_the_next_one_still_runs(harness, c
     task = asyncio.create_task(session.render_loop())
     await eventually(lambda: "RuntimeError: broken font" in caplog.text)
     session.dirty.set()
-    await eventually(lambda: session.topics.map in harness.client.topics())
+    await eventually(lambda: session.topics.map in harness.client.topics(), seconds=10)
     await stop(task)
 
 

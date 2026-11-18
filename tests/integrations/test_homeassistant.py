@@ -472,12 +472,12 @@ async def test_a_service_asked_for_its_response_returns_the_result():
 
 
 async def test_a_refused_service_response_names_itself_and_the_error():
-    answers = {"call_service": {"success": False, "error": {"code": "service_not_found"}}}
+    answers = {"call_service": {"success": False, "error": {"code": "not_found"}}}
     async with serve(answering_server(answers), "127.0.0.1", 0) as listener:
         port = listener.sockets[0].getsockname()[1]
         ha = HomeAssistant(f"http://127.0.0.1:{port}", "secret")
         task = asyncio.create_task(ha.run([], no_event))
-        with pytest.raises(HomeAssistantError, match=r"^localtuya\.get_status failed: .*service_not_found"):
+        with pytest.raises(HomeAssistantError, match=r"^localtuya\.get_status failed: .*not_found"):
             await ha.service_response("localtuya", "get_status", {"device_id": "dev"})
         await stop(task)
 

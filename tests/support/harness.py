@@ -61,7 +61,7 @@ class Harness:
         if isinstance(self.statuses, Exception):
             raise self.statuses
         if self.statuses is None:
-            raise HomeAssistantError(f"{domain}.{service} failed: service_not_found")
+            raise HomeAssistantError(f"{domain}.{service} failed: not_found")
         return {"context": {}, "response": {"status": self.statuses}}
 
     async def fire_event(self, event_type: str, data: dict) -> None:

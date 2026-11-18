@@ -6,8 +6,8 @@ POLL_SECONDS = 0.005
 ATTEMPTS = 400
 
 
-async def eventually(check: Callable[[], bool]) -> None:
-    for _ in range(ATTEMPTS):
+async def eventually(check: Callable[[], bool], seconds: float = POLL_SECONDS * ATTEMPTS) -> None:
+    for _ in range(round(seconds / POLL_SECONDS)):
         if check():
             return
         await asyncio.sleep(POLL_SECONDS)

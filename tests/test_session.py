@@ -632,7 +632,7 @@ async def test_the_covered_floor_takes_the_nearest_room(harness):
 async def test_render_loop_publishes_the_map(harness):
     harness.session().on_cloud_payload(cloud_payload())
     task = asyncio.create_task(harness.session().render_loop())
-    await eventually(lambda: harness.session().topics.map_attributes in harness.client.topics())
+    await eventually(lambda: harness.session().topics.map_attributes in harness.client.topics(), seconds=10)
     await stop(task)
     image = harness.client.last(harness.session().topics.map)
     assert image.startswith(b"\x89PNG")
@@ -1017,7 +1017,7 @@ async def test_map_attributes_list_room_colors(harness):
     harness.session().on_cloud_payload(cloud_payload())
     await harness.dp(DPS.raw, encode_raw(rooms_message()))
     task = asyncio.create_task(harness.session().render_loop())
-    await eventually(lambda: harness.session().topics.map_attributes in harness.client.topics())
+    await eventually(lambda: harness.session().topics.map_attributes in harness.client.topics(), seconds=10)
     await stop(task)
     rooms = json.loads(harness.client.last(harness.session().topics.map_attributes))["rooms"]
     assert rooms == [

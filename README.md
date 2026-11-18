@@ -59,8 +59,9 @@ flowchart LR
    setting the robot up, so whatever the robot changed while LocalTuya could not reach it would wait for its
    next change. When the service connects to Home Assistant, and each time one of the robot's LocalTuya
    entities comes back from unavailable, it asks LocalTuya for the robot's state, room mode and statistics
-   with `localtuya.get_status`. When LocalTuya has no such service or cannot reach the robot, the service
-   reads them from the Tuya cloud instead, if a cloud project is configured and the map source is Automatic.
+   with `localtuya.get_status`. When LocalTuya has no such service, cannot reach the robot or answers with an
+   empty status, as it does right after it connects, the service reads them from the Tuya cloud instead, if a
+   cloud project is configured and the map source is Automatic.
    A cloud value replaces the service's only when the robot reported it after the value the service last
    got from LocalTuya.
 2. When a cloud project is configured, it downloads the robot's realtime map from the Tuya cloud during and

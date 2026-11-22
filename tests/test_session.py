@@ -653,6 +653,7 @@ async def test_a_tapped_room_is_drawn_before_its_tap_is_settled_and_without_the_
     await harness.message(session.topics.tap, json.dumps({"mode": "room", "x": x, "y": y}))
     await eventually(lambda: json.loads(harness.client.last(session.topics.map_attributes))["selection"] == "rooms")
     assert session.rooms.ids == []
+    assert session.scene().room_order == {2: 1}
     session.taps.clear()
     await stop(task)
 

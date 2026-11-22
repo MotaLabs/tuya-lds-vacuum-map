@@ -642,6 +642,47 @@ async def test_render_loop_publishes_the_map(harness):
     assert attributes["image_digest"] == hashlib.sha256(image).hexdigest()[:16]
 
 
+async def test_a_tapped_room_is_drawn_before_its_tap_is_settled_and_without_the_render_interval(tmp_path):
+    harness = Harness(tmp_path, timing=dataclasses.replace(TIMING, double_tap=30, render_interval=60))
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    await harness.dp(DPS.raw, encode_raw(rooms_message()))
+    task = asyncio.create_task(session.render_loop())
+    await eventually(lambda: session.topics.map_attributes in harness.client.topics())
+    x, y = cell_center_mm(30, 14)
+    await harness.message(session.topics.tap, json.dumps({"mode": "room", "x": x, "y": y}))
+    await eventually(lambda: json.loads(harness.client.last(session.topics.map_attributes))["selection"] == "rooms")
+    assert session.rooms.ids == []
+    session.taps.clear()
+    await stop(task)
+
+
+async def test_the_robot_moving_still_waits_for_the_render_interval(tmp_path):
+    harness = Harness(tmp_path, timing=dataclasses.replace(TIMING, render_interval=0.5))
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    task = asyncio.create_task(session.render_loop())
+    await eventually(lambda: session.topics.map in harness.client.topics())
+    drawn = harness.client.topics().count(session.topics.map)
+    session.dirty.set()
+    await asyncio.sleep(0.2)
+    assert harness.client.topics().count(session.topics.map) == drawn
+    await eventually(lambda: harness.client.topics().count(session.topics.map) == drawn + 1)
+    await stop(task)
+
+
+async def test_a_tap_that_changes_nothing_on_the_map_does_not_redraw_it(harness):
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    await harness.dp(DPS.raw, encode_raw(rooms_message()))
+    session.dirty.clear()
+    x, y = cell_center_mm(26, 7)
+    await harness.message(session.topics.tap, json.dumps({"mode": "room", "x": x, "y": y}))
+    assert not session.dirty.is_set()
+    await eventually(lambda: harness.services)
+    assert not session.dirty.is_set()
+
+
 async def test_nothing_is_drawn_while_mqtt_is_down(harness):
     session = harness.session()
     session.on_cloud_payload(cloud_payload())

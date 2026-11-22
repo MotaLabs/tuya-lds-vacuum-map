@@ -658,6 +658,22 @@ async def test_a_tapped_room_is_drawn_before_its_tap_is_settled_and_without_the_
     await stop(task)
 
 
+async def test_a_spot_square_is_hidden_while_a_room_tap_waits(tmp_path):
+    harness = Harness(tmp_path, timing=dataclasses.replace(TIMING, double_tap=30))
+    session = harness.session()
+    session.on_cloud_payload(cloud_payload())
+    await harness.dp(DPS.raw, encode_raw(rooms_message()))
+    await harness.message(session.topics.tap, json.dumps({"mode": "spot", "x": 0, "y": 0}))
+    assert session.scene().preview_square is not None
+    x, y = cell_center_mm(30, 14)
+    await harness.message(session.topics.tap, json.dumps({"mode": "room", "x": x, "y": y}))
+    assert session.scene().preview_square is None
+    assert session.spots.preview is not None
+    await harness.message(session.topics.tap, json.dumps({"mode": "room", "x": x, "y": y}))
+    assert session.scene().preview_square is not None
+    session.taps.clear()
+
+
 async def test_the_robot_moving_still_waits_for_the_render_interval(tmp_path):
     harness = Harness(tmp_path, timing=dataclasses.replace(TIMING, render_interval=0.5))
     session = harness.session()

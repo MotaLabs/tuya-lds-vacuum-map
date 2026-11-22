@@ -11,7 +11,7 @@ from typing import Any
 from . import __version__
 from .cloud_sync import CloudMapSync
 from .config import RobotSettings, Settings
-from .gestures import START_DELAY_RANGE, RoomPicker, SpotPicker, TapController, TapMode, start_delay
+from .gestures import START_DELAY_RANGE, RoomPicker, SpotPicker, SpotPreview, TapController, TapMode, start_delay
 from .i18n import Texts
 from .integrations.homeassistant import HomeAssistant, HomeAssistantError
 from .integrations.localtuya import LocalTuyaLink
@@ -336,12 +336,15 @@ class RobotSession:
         for name in names:
             await self.mqtt.publish(self.topics.statistic(name), str(self.robot.statistics[name]))
 
+    def shown_preview(self) -> SpotPreview | None:
+        return self.spots.preview if self.rooms.expected is None else None
+
     def scene(self) -> Scene | None:
         rooms = self.robot.rooms
         grid = self.map.compose(rooms.rooms if rooms else ())
         if grid is None:
             return None
-        preview = self.spots.preview
+        preview = self.shown_preview()
         return Scene(
             grid=grid,
             rooms=rooms.rooms if rooms else (),
@@ -396,7 +399,7 @@ class RobotSession:
             "robot_state_name": self.state_labels.get(self.robot.state, self.robot.state),
             "robot_position": {"x": position[0], "y": position[1]} if position else None,
             "map_source": self.snapshot.source.value,
-            "selection": "rooms" if self.rooms.shown else "spot" if self.spots.preview else "none",
+            "selection": "rooms" if self.rooms.shown else "spot" if self.shown_preview() else "none",
             "rooms": [
                 {"id": room.id, "name": room.name, "color": format_color(self.room_colors[room.id])}
                 for room in scene.rooms

@@ -134,6 +134,10 @@ class SpotPicker:
         self._timer = None
 
 
+def toggled(ids: list[int], room_id: int) -> list[int]:
+    return [listed for listed in ids if listed != room_id] if room_id in ids else [*ids, room_id]
+
+
 class RoomPicker:
     def __init__(self, sender: Sender, auto_start: Callable[[], float | None], on_change: Callable[[], None]) -> None:
         self.sender = sender
@@ -149,8 +153,7 @@ class RoomPicker:
         if self.expected is None:
             return self.ids
         map_id, room_id = self.expected
-        ids = self.ids if map_id == self.map_id else []
-        return [listed for listed in ids if listed != room_id] if room_id in ids else [*ids, room_id]
+        return toggled(self.ids if map_id == self.map_id else [], room_id)
 
     def expect(self, map_id: int, room_id: int) -> None:
         self.expected = (map_id, room_id)
@@ -165,10 +168,7 @@ class RoomPicker:
         self.expected = None
         if map_id != self.map_id:
             self.map_id, self.ids = map_id, []
-        if room_id in self.ids:
-            self.ids.remove(room_id)
-        else:
-            self.ids.append(room_id)
+        self.ids = toggled(self.ids, room_id)
         self.reschedule()
         self.on_change()
 

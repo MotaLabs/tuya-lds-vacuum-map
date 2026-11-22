@@ -686,6 +686,9 @@ async def test_a_tap_made_while_the_map_waits_for_the_render_interval_is_drawn_a
     await harness.tap(*cell_center_mm(30, 14))
     await eventually(lambda: harness.client.topics().count(session.topics.map) == drawn + 1)
     assert json.loads(harness.client.last(session.topics.map_attributes))["selection"] == "rooms"
+    session.dirty.set()
+    await asyncio.sleep(0.1)
+    assert harness.client.topics().count(session.topics.map) == drawn + 1
     session.taps.clear()
     await stop(task)
 

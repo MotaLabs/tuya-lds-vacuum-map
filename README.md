@@ -183,9 +183,9 @@ connection, the MQTT connection and the cloud project are shared.
 | `CLOUD_REFRESH_SECONDS` | | `60` | How often the cloud map is fetched while the robot moves |
 | `CLOUD_IDLE_REFRESH_SECONDS` | | `21600` | How often the cloud map is fetched while the robot is still |
 | `CLOUD_AFTER_CLEANING_SECONDS` | | `20` | Wait after a cleaning ends before fetching the final map |
-| `DOUBLE_TAP_SECONDS` | | `0.6` | Window for a double tap; a single tap on a room waits this long before it cleans or lists the room |
+| `DOUBLE_TAP_SECONDS` | | `0.6` | Window for a double tap; a single tap on a room waits this long before it cleans or lists the room, and the map shows the room it would list in the meantime |
 | `SPOT_PREVIEW_SECONDS` | | `120` | With the automatic start off, how long a spot preview waits for a tap inside it |
-| `RENDER_INTERVAL_SECONDS` | | `1.5` | Shortest time between two map images |
+| `RENDER_INTERVAL_SECONDS` | | `1.5` | Shortest time between two map images drawn for the robot's updates; a change made on the map, such as a tapped room or a spot preview, is drawn at once |
 | `SAVE_INTERVAL_SECONDS` | | `30` | How often the state in `DATA_DIR` is written |
 | `FONT_PATH` | | DejaVu Sans | TrueType font for the labels |
 | `LOG_LEVEL` | | `INFO` | |
@@ -220,7 +220,7 @@ The service creates, through MQTT discovery:
 
 | Entity | What it is |
 |---|---|
-| `camera.<device>_map` | The map, with `calibration_points`, `robot_state` (the robot's own code), `robot_state_name` (its text in the service's language, such as "Emptying the bin"), `robot_position`, `map_source`, `rooms` (id, name, color), `selection` (`rooms` while a list of rooms waits, `spot` while a spot preview does, `none` otherwise) and `image_digest` attributes; the digest changes with every new image, so a card that redraws when the camera changes shows a tapped room or spot as soon as it is drawn, and follows the robot as it moves |
+| `camera.<device>_map` | The map, with `calibration_points`, `robot_state` (the robot's own code), `robot_state_name` (its text in the service's language, such as "Emptying the bin"), `robot_position`, `map_source`, `rooms` (id, name, color), `selection` (`rooms` while a list of rooms waits or a tapped room is shown, `spot` while a spot preview does, `none` otherwise) and `image_digest` attributes; the digest changes with every new image, so a card that redraws when the camera changes shows a tapped room or spot as soon as it is drawn, and follows the robot as it moves |
 | `select.<device>_map_source` | `Automatic` or `Local only` |
 | `select.<device>_room_settings` | The room picked by a double tap, or `None` |
 | `text.<device>_room_color` | The picked room's color as `#rrggbb`; write a new one to change it |
@@ -294,7 +294,7 @@ icons:
         entity_id: button.robot_vacuum_clear_selection
 ```
 
-The two icons join the card's own and show only while a list of rooms or a spot preview waits.
+The two icons join the card's own and show only while a list of rooms, a tapped room or a spot preview waits.
 
 In the room mode, a tap adds the room to a list: the room gets the next number on the map and a second tap on
 it takes it out. The list starts in that order once no tap came for the start delay, or from the start button.

@@ -382,7 +382,7 @@ class RobotSession:
 
     async def hold_until(self, ready_at: float) -> None:
         wait = ready_at - asyncio.get_running_loop().time()
-        if wait > 0 and not self.urgent.is_set():
+        if wait > 0:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self.urgent.wait(), wait)
 

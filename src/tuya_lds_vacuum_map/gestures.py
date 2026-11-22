@@ -89,6 +89,7 @@ class SpotPicker:
             return
         self.preview = SpotPreview(map_id, (x, y), self.size_mm)
         self.reschedule()
+        self.on_change()
 
     def hold(self) -> None:
         self._cancel_timer()
@@ -133,6 +134,10 @@ class SpotPicker:
         self._timer = None
 
 
+def toggled(ids: list[int], room_id: int) -> list[int]:
+    return [listed for listed in ids if listed != room_id] if room_id in ids else [*ids, room_id]
+
+
 class RoomPicker:
     def __init__(self, sender: Sender, auto_start: Callable[[], float | None], on_change: Callable[[], None]) -> None:
         self.sender = sender
@@ -140,15 +145,30 @@ class RoomPicker:
         self.on_change = on_change
         self.map_id: int | None = None
         self.ids: list[int] = []
+        self.expected: tuple[int, int] | None = None
         self._timer: asyncio.Task | None = None
 
+    @property
+    def shown(self) -> list[int]:
+        if self.expected is None:
+            return self.ids
+        map_id, room_id = self.expected
+        return toggled(self.ids if map_id == self.map_id else [], room_id)
+
+    def expect(self, map_id: int, room_id: int) -> None:
+        self.expected = (map_id, room_id)
+        self.on_change()
+
+    def drop_expected(self) -> None:
+        if self.expected is not None:
+            self.expected = None
+            self.on_change()
+
     def toggle(self, map_id: int, room_id: int) -> None:
+        self.expected = None
         if map_id != self.map_id:
             self.map_id, self.ids = map_id, []
-        if room_id in self.ids:
-            self.ids.remove(room_id)
-        else:
-            self.ids.append(room_id)
+        self.ids = toggled(self.ids, room_id)
         self.reschedule()
         self.on_change()
 
@@ -232,14 +252,14 @@ class TapController:
             log.warning("tap ignored: no map id known yet")
             return
         if mode is TapMode.SPOT:
-            self._drop_waiting()
+            self._abandon_waiting()
             self.rooms.clear()
             await self.spots.tap(map_id, x, y)
             return
         rooms = self.robot.rooms
         room = room_at(self.map.view, rooms.rooms if rooms else (), x, y)
         if self.double_tap.tap(asyncio.get_running_loop().time(), room.id if room else None):
-            self._drop_waiting()
+            self._abandon_waiting()
             self.reschedule()
             await self.on_room_selected(room)
             return
@@ -250,6 +270,7 @@ class TapController:
             if self._picking:
                 await self._settle()
             self._wait(partial(self._pick, map_id, room.id), picking=True)
+            self.rooms.expect(map_id, room.id)
 
     async def start(self) -> None:
         await self._settle()
@@ -259,7 +280,7 @@ class TapController:
             await self.spots.start()
 
     def clear(self) -> None:
-        self._drop_waiting()
+        self._abandon_waiting()
         self.spots.clear()
         self.rooms.clear()
 
@@ -275,7 +296,7 @@ class TapController:
             self.rooms.reschedule()
 
     def _wait(self, then: Callable[[], Awaitable[None]], picking: bool = False) -> None:
-        self._drop_waiting()
+        self._abandon_waiting()
         self.spots.hold()
         self.rooms.hold()
         self._then, self._picking = then, picking
@@ -304,3 +325,7 @@ class TapController:
         if self._pending and not self._pending.done():
             self._pending.cancel()
         self._pending, self._then, self._picking = None, None, False
+
+    def _abandon_waiting(self) -> None:
+        self._drop_waiting()
+        self.rooms.drop_expected()

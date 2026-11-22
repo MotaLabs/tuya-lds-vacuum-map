@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
@@ -10,7 +11,7 @@ from typing import Any
 from . import __version__
 from .cloud_sync import CloudMapSync
 from .config import RobotSettings, Settings
-from .gestures import START_DELAY_RANGE, RoomPicker, SpotPicker, TapController, TapMode, start_delay
+from .gestures import START_DELAY_RANGE, RoomPicker, SpotPicker, SpotPreview, TapController, TapMode, start_delay
 from .i18n import Texts
 from .integrations.homeassistant import HomeAssistant, HomeAssistantError
 from .integrations.localtuya import LocalTuyaLink
@@ -65,11 +66,17 @@ class RobotSession:
             log.warning("%s: the saved path could not be read: %s", self.label, error)
         self.renderer = Renderer(profile.cells, Style(scale=settings.map_scale, font_path=settings.font_path))
         self.dirty = asyncio.Event()
+        self.urgent = asyncio.Event()
         self.link = link = LocalTuyaLink(ha, config.device_id, profile.data_points.raw)
         self.spots = SpotPicker(
-            self.robot, link, geometry.spot_size_mm, self.auto_start_delay, settings.timing.spot_preview, self.dirty.set
+            self.robot,
+            link,
+            geometry.spot_size_mm,
+            self.auto_start_delay,
+            settings.timing.spot_preview,
+            self.redraw_now,
         )
-        self.rooms = RoomPicker(link, self.auto_start_delay, self.dirty.set)
+        self.rooms = RoomPicker(link, self.auto_start_delay, self.redraw_now)
         self.taps = TapController(
             self.robot,
             self.map,
@@ -206,7 +213,6 @@ class RobotSession:
                 data = as_object(json.loads(payload))
                 x, y = point_at(data.get("x"), data.get("y"))
                 await self.taps.tap(TapMode(data.get("mode", TapMode.ROOM)), x, y)
-                self.dirty.set()
             elif topic == topics.map_source_set:
                 self.snapshot.source = MapSource.LOCAL if payload == self.texts.source_local else MapSource.AUTO
                 self.unsaved = True
@@ -330,12 +336,15 @@ class RobotSession:
         for name in names:
             await self.mqtt.publish(self.topics.statistic(name), str(self.robot.statistics[name]))
 
+    def shown_preview(self) -> SpotPreview | None:
+        return self.spots.preview if self.rooms.expected is None else None
+
     def scene(self) -> Scene | None:
         rooms = self.robot.rooms
         grid = self.map.compose(rooms.rooms if rooms else ())
         if grid is None:
             return None
-        preview = self.spots.preview
+        preview = self.shown_preview()
         return Scene(
             grid=grid,
             rooms=rooms.rooms if rooms else (),
@@ -346,22 +355,36 @@ class RobotSession:
             spot=self.robot.spot,
             preview_square=preview.square if preview else None,
             preview_center=preview.center if preview else None,
-            room_order={room_id: order for order, room_id in enumerate(self.rooms.ids, 1)},
+            room_order={room_id: order for order, room_id in enumerate(self.rooms.shown, 1)},
             show_settings=bool(self.robot.room_mode),
             fan_labels=self.fan_labels,
             water_labels=self.water_labels,
             room_colors=self.room_colors,
         )
 
+    def redraw_now(self) -> None:
+        self.urgent.set()
+        self.dirty.set()
+
     async def render_loop(self) -> None:
+        loop = asyncio.get_running_loop()
+        ready_at = loop.time()
         while True:
             await self.dirty.wait()
+            await self.hold_until(ready_at)
             self.dirty.clear()
+            self.urgent.clear()
             try:
                 await self.redraw()
             except Exception:
                 log.exception("%s: the map could not be drawn", self.label)
-            await asyncio.sleep(self.settings.timing.render_interval)
+            ready_at = loop.time() + self.settings.timing.render_interval
+
+    async def hold_until(self, ready_at: float) -> None:
+        wait = ready_at - asyncio.get_running_loop().time()
+        if wait > 0:
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self.urgent.wait(), wait)
 
     async def redraw(self) -> None:
         scene = self.scene() if self.mqtt.connected else None
@@ -376,7 +399,7 @@ class RobotSession:
             "robot_state_name": self.state_labels.get(self.robot.state, self.robot.state),
             "robot_position": {"x": position[0], "y": position[1]} if position else None,
             "map_source": self.snapshot.source.value,
-            "selection": "rooms" if self.rooms.ids else "spot" if self.spots.preview else "none",
+            "selection": "rooms" if self.rooms.shown else "spot" if self.shown_preview() else "none",
             "rooms": [
                 {"id": room.id, "name": room.name, "color": format_color(self.room_colors[room.id])}
                 for room in scene.rooms

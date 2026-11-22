@@ -111,6 +111,8 @@ async def test_a_spot_tap_shows_its_square_and_sends_nothing(setup):
 
 async def test_a_tap_inside_the_preview_cleans_the_previewed_spot(setup):
     await setup.taps.tap(TapMode.SPOT, 0, 0)
+    assert setup.changes == 1
+    setup.changes = 0
     await setup.taps.tap(TapMode.SPOT, 750, -750)
     [cmds] = setup.targets()
     assert cmds[0]["data"]["mapId"] == 42
@@ -135,7 +137,7 @@ async def test_an_unconfirmed_preview_goes_away(setup):
     await asyncio.sleep(EXPIRY / 2)
     assert setup.spots.preview
     await eventually(lambda: setup.spots.preview is None)
-    assert setup.changes == 1
+    assert setup.changes == 2
     assert setup.sender.sent == []
 
 
@@ -149,11 +151,13 @@ async def test_moving_the_preview_restarts_its_time(setup):
 
 async def test_a_double_tap_keeps_the_preview(setup):
     await setup.taps.tap(TapMode.SPOT, 0, 0)
+    setup.changes = 0
     await setup.taps.tap(TapMode.ROOM, *LEFT)
     await setup.taps.tap(TapMode.ROOM, *LEFT)
     await asyncio.sleep(WINDOW * 2)
     assert setup.spots.preview
-    assert setup.changes == 0
+    assert setup.rooms.shown == []
+    assert setup.changes == 2
 
 
 async def test_a_preview_starts_by_itself_after_the_delay(setup):
@@ -166,7 +170,7 @@ async def test_a_preview_starts_by_itself_after_the_delay(setup):
     assert cmds[0]["data"]["extraAreas"][0]["vertexs"] == [[-750, -750], [750, -750], [750, 750], [-750, 750]]
     assert setup.robot.spot == ((-750, -750), (750, -750), (750, 750), (-750, 750))
     assert setup.spots.preview is None
-    assert setup.changes == 1
+    assert setup.changes == 2
 
 
 async def test_moving_the_preview_restarts_the_delay(setup):
@@ -218,7 +222,7 @@ async def test_a_spot_lost_to_a_closed_connection_is_logged(caplog):
     setup.delay = DELAY
     await setup.taps.tap(TapMode.SPOT, 0, 0)
     await eventually(lambda: "cleaning command failed: websocket closed" in caplog.text)
-    assert setup.changes == 1
+    assert setup.changes == 2
     assert setup.robot.spot is None
 
 
@@ -268,7 +272,7 @@ async def test_a_spot_that_fails_to_start_is_logged(caplog):
     assert "cleaning command failed: offline" in caplog.text
     assert setup.spots.preview is None
     assert setup.robot.spot is None
-    assert setup.changes == 1
+    assert setup.changes == 2
 
 
 def test_a_second_tap_right_at_the_end_of_the_window_is_a_double_tap():
@@ -344,16 +348,17 @@ def segments(setup: Setup) -> list[list[int]]:
 
 
 async def tap_room(setup: Setup, point: tuple[int, int]) -> None:
-    changes = setup.changes
     await setup.taps.tap(TapMode.ROOM, *point)
-    await eventually(lambda: setup.changes > changes)
+    await eventually(lambda: setup.rooms.expected is None)
 
 
 async def test_a_room_tap_adds_the_room_to_the_list_after_the_window(setup):
     await setup.taps.tap(TapMode.ROOM, *LEFT)
     assert setup.rooms.ids == []
+    assert setup.rooms.shown == [1]
     await eventually(lambda: setup.rooms.ids == [1])
-    assert setup.changes == 1
+    assert setup.rooms.shown == [1]
+    assert setup.changes == 2
     await asyncio.sleep(WINDOW * 3)
     assert setup.sender.sent == []
 
@@ -364,7 +369,7 @@ async def test_a_tap_on_a_listed_room_takes_it_out(setup):
     assert setup.rooms.ids == [1, 2]
     await tap_room(setup, LEFT)
     assert setup.rooms.ids == [2]
-    assert setup.changes == 3
+    assert setup.changes == 6
     assert setup.sender.sent == []
 
 
@@ -375,7 +380,7 @@ async def test_the_list_is_sent_in_the_order_tapped(setup):
     assert segments(setup) == [[2, 1]]
     assert setup.targets()[0][0]["data"]["mapId"] == 42
     assert setup.rooms.ids == []
-    assert setup.changes == 3
+    assert setup.changes == 5
 
 
 async def test_a_list_starts_by_itself_after_the_delay(setup):
@@ -472,9 +477,58 @@ async def test_clear_drops_the_list_and_the_preview(setup):
     await setup.taps.tap(TapMode.SPOT, 0, 0)
     setup.taps.clear()
     assert setup.spots.preview is None
-    assert setup.changes == 3
+    assert setup.changes == 5
     await setup.taps.start()
     assert setup.sender.sent == []
+
+
+async def test_a_listed_room_is_shown_leaving_before_the_window_ends(setup):
+    await tap_room(setup, LEFT)
+    await setup.taps.tap(TapMode.ROOM, *LEFT)
+    assert (setup.rooms.ids, setup.rooms.shown) == ([1], [])
+    await eventually(lambda: setup.rooms.ids == [])
+
+
+async def test_a_double_tap_takes_back_the_room_it_showed(setup):
+    await setup.taps.tap(TapMode.ROOM, *LEFT)
+    await setup.taps.tap(TapMode.ROOM, *LEFT)
+    assert setup.rooms.shown == []
+    assert [room.id for room in setup.selected] == [1]
+    await asyncio.sleep(WINDOW * 3)
+    assert setup.rooms.ids == []
+
+
+@pytest.mark.parametrize("drop", ["spot", "area", "clear"])
+async def test_a_room_shown_while_its_tap_waits_goes_away_with_the_tap(setup, drop):
+    await setup.taps.tap(TapMode.ROOM, *LEFT)
+    if drop == "spot":
+        await setup.taps.tap(TapMode.SPOT, 0, 0)
+    elif drop == "area":
+        await setup.taps.tap(TapMode.ROOM, *CATS)
+    else:
+        setup.taps.clear()
+    assert setup.rooms.shown == []
+    await asyncio.sleep(WINDOW * 3)
+    assert setup.rooms.ids == []
+
+
+def test_a_room_expected_on_another_map_is_shown_alone():
+    rooms = RoomPicker(FakeSender(), lambda: None, lambda: None)
+    rooms.toggle(42, 1)
+    rooms.expect(7, 2)
+    assert rooms.shown == [2]
+    rooms.expect(42, 2)
+    assert rooms.shown == [1, 2]
+
+
+def test_dropping_with_no_room_expected_asks_for_no_redraw():
+    changes = []
+    rooms = RoomPicker(FakeSender(), lambda: None, lambda: changes.append(True))
+    rooms.drop_expected()
+    assert changes == []
+    rooms.expect(42, 1)
+    rooms.drop_expected()
+    assert (changes, rooms.shown) == ([True, True], [])
 
 
 def test_a_room_of_another_map_starts_a_new_list():
